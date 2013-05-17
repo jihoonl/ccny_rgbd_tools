@@ -1,5 +1,8 @@
 all: g2o
 
+
+ARCH = $(shell uname -p)
+
 SVN_DIR   = g2o-svn
 BUILD_DIR = $(SVN_DIR)/build
 TOP_DIR = $(PWD)
@@ -13,10 +16,14 @@ SVN_CMDLINE = svn --no-auth-cache --trust-server-cert --non-interactive
 include $(shell rospack find mk)/svn_checkout.mk
 
 g2o: $(SVN_DIR)
+ifeq ($(ARCH),armv7l)
+	touch g2o
+else
 	mkdir -p $(BUILD_DIR)
 	cd $(BUILD_DIR) && cmake ../ -DCMAKE_INSTALL_PREFIX=$(TOP_DIR) 
 	cd $(BUILD_DIR) && make install
 	touch g2o
+endif
 
 clean:
 	cd $(BUILD_DIR) && make clean 
