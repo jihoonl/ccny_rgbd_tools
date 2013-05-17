@@ -34,12 +34,6 @@ include_directories(${OpenCV_INCLUDE_DIRS})
 link_directories(${OpenCV_LIBRARY_DIRS})
 link_libraries(${OpenCV_LIBRARIES})
 
-# Octomap
-find_package(octomap REQUIRED)
-include_directories(${OCTOMAP_INCLUDE_DIRS})
-link_directories(${OCTOMAP_LIBRARY_DIRS})
-link_libraries(${OCTOMAP_LIBRARIES})
-
 # PCL
 find_package(PCL REQUIRED)
 include_directories(${PCL_INCLUDE_DIRS})
@@ -48,6 +42,13 @@ link_libraries(${PCL_LIBRARIES})
 
 
 if(NOT ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "armv7l")
+
+	# Octomap
+	find_package(octomap REQUIRED)
+	include_directories(${OCTOMAP_INCLUDE_DIRS})
+	link_directories(${OCTOMAP_LIBRARY_DIRS})
+	link_libraries(${OCTOMAP_LIBRARIES})
+
 
 	#g2o
 	set(G2O_LIBRARIES 
