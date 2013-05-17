@@ -46,14 +46,20 @@ include_directories(${PCL_INCLUDE_DIRS})
 link_directories(${PCL_LIBRARY_DIRS})
 link_libraries(${PCL_LIBRARIES})
 
-#g2o
-set(G2O_LIBRARIES 
-  g2o_core 
-  g2o_stuff
-  g2o_solver_cholmod 
-  g2o_solver_csparse 
-  g2o_types_slam3d
-  cholmod)
+
+if(NOT ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "armv7l")
+
+	#g2o
+	set(G2O_LIBRARIES 
+	  g2o_core 
+	  g2o_stuff
+	  g2o_solver_cholmod 
+	  g2o_solver_csparse 
+	  g2o_types_slam3d
+	  cholmod)
+
+endif(NOT ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "armv7l")
+
 
 # boost
 rosbuild_add_boost_directories()
@@ -74,59 +80,65 @@ target_link_libraries (visual_odometry_node
   boost_filesystem
   ${OpenCV_LIBRARIES})
   
-################################################################
-# Build keyframe mapper application
-################################################################
 
-rosbuild_add_executable(keyframe_mapper_node
-  src/node/keyframe_mapper_node.cpp
-  src/apps/keyframe_mapper.cpp
-  src/util.cpp)
-  
-target_link_libraries (keyframe_mapper_node
-  rgbdtools
-  boost_signals
-  boost_system
-  boost_filesystem
-  boost_regex
-  ${OpenCV_LIBRARIES}
-  ${G2O_LIBRARIES})
-  
-################################################################
-# Build feature viewer application
-################################################################
 
-rosbuild_add_executable(feature_viewer_node 
-  src/node/feature_viewer_node.cpp
-  src/apps/feature_viewer.cpp
-  src/util.cpp)
-  
-target_link_libraries (feature_viewer_node
-  rgbdtools
-  boost_signals
-  boost_system
-  boost_filesystem
-  ${PCL_LIBRARIES}
-  ${OpenCV_LIBRARIES})
-  
-################################################################
-# Build image proc application
-################################################################
+if(NOT ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "armv7l")
 
-rosbuild_add_library(rgbd_image_proc_app 
-  src/apps/rgbd_image_proc.cpp
-  src/util.cpp)
+	################################################################
+	# Build keyframe mapper application
+	################################################################
 
-target_link_libraries (rgbd_image_proc_app  
-  rgbdtools
-  boost_signals
-  boost_system
-  boost_filesystem
-  ${OpenCV_LIBRARIES})
-  
-rosbuild_add_executable(rgbd_image_proc_node src/node/rgbd_image_proc_node.cpp)
-rosbuild_add_library(rgbd_image_proc_nodelet src/nodelet/rgbd_image_proc_nodelet.cpp)
-  
-target_link_libraries(rgbd_image_proc_node    rgbd_image_proc_app)
-target_link_libraries(rgbd_image_proc_nodelet rgbd_image_proc_app)
+	rosbuild_add_executable(keyframe_mapper_node
+	  src/node/keyframe_mapper_node.cpp
+	  src/apps/keyframe_mapper.cpp
+	  src/util.cpp)
+	  
+	target_link_libraries (keyframe_mapper_node
+	  rgbdtools
+	  boost_signals
+	  boost_system
+	  boost_filesystem
+	  boost_regex
+	  ${OpenCV_LIBRARIES}
+	  ${G2O_LIBRARIES})
+	  
+	################################################################
+	# Build feature viewer application
+	################################################################
+
+	rosbuild_add_executable(feature_viewer_node 
+	  src/node/feature_viewer_node.cpp
+	  src/apps/feature_viewer.cpp
+	  src/util.cpp)
+	  
+	target_link_libraries (feature_viewer_node
+	  rgbdtools
+	  boost_signals
+	  boost_system
+	  boost_filesystem
+	  ${PCL_LIBRARIES}
+	  ${OpenCV_LIBRARIES})
+	  
+	################################################################
+	# Build image proc application
+	################################################################
+
+	rosbuild_add_library(rgbd_image_proc_app 
+	  src/apps/rgbd_image_proc.cpp
+	  src/util.cpp)
+
+	target_link_libraries (rgbd_image_proc_app  
+	  rgbdtools
+	  boost_signals
+	  boost_system
+	  boost_filesystem
+	  ${OpenCV_LIBRARIES})
+	  
+	rosbuild_add_executable(rgbd_image_proc_node src/node/rgbd_image_proc_node.cpp)
+	rosbuild_add_library(rgbd_image_proc_nodelet src/nodelet/rgbd_image_proc_nodelet.cpp)
+	  
+	target_link_libraries(rgbd_image_proc_node    rgbd_image_proc_app)
+	target_link_libraries(rgbd_image_proc_nodelet rgbd_image_proc_app)
+
+endif(NOT ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "armv7l")
 
