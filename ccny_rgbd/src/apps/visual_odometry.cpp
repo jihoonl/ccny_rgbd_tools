@@ -24,11 +24,11 @@
 #include "ccny_rgbd/apps/visual_odometry.h"
 
 namespace ccny_rgbd {
-  
+
 VisualOdometry::VisualOdometry(
-  const ros::NodeHandle& nh, 
+  const ros::NodeHandle& nh,
   const ros::NodeHandle& nh_private):
-  nh_(nh), 
+  nh_(nh),
   nh_private_(nh_private),
   initialized_(false),
   frame_count_(0)
@@ -36,11 +36,11 @@ VisualOdometry::VisualOdometry(
   ROS_INFO("Starting RGBD Visual Odometry");
 
   // **** initialize ROS parameters
-  
+
   initParams();
 
   // **** inititialize state variables
-  
+
   f2b_.setIdentity();
 
   // **** publishers
@@ -51,43 +51,43 @@ VisualOdometry::VisualOdometry(
     "pose", queue_size_);
   path_pub_ = nh_.advertise<PathMsg>(
     "path", queue_size_);
-    
+
   feature_cloud_publisher_ = nh_.advertise<PointCloudFeature>(
     "feature/cloud", 1);
   feature_cov_publisher_ = nh_.advertise<visualization_msgs::Marker>(
     "feature/covariances", 1);
-    
+
   model_cloud_publisher_ = nh_.advertise<PointCloudFeature>(
     "model/cloud", 1);
   model_cov_publisher_ = nh_.advertise<visualization_msgs::Marker>(
     "model/covariances", 1);
-  
+
   // **** subscribers
-  
+
   ImageTransport rgb_it(nh_);
   ImageTransport depth_it(nh_);
 
   sub_rgb_.subscribe(rgb_it,     "/rgbd/rgb",   queue_size_);
   sub_depth_.subscribe(depth_it, "/rgbd/depth", queue_size_);
   sub_info_.subscribe(nh_,       "/rgbd/info",  queue_size_);
-  
+
   // Synchronize inputs.
   sync_.reset(new RGBDSynchronizer3(
                 RGBDSyncPolicy3(queue_size_), sub_rgb_, sub_depth_, sub_info_));
-  
-  sync_->registerCallback(boost::bind(&VisualOdometry::RGBDCallback, this, _1, _2, _3));  
+
+  sync_->registerCallback(boost::bind(&VisualOdometry::RGBDCallback, this, _1, _2, _3));
 }
 
 VisualOdometry::~VisualOdometry()
 {
   fclose(diagnostics_file_);
-  ROS_INFO("Destroying RGBD Visual Odometry"); 
+  ROS_INFO("Destroying RGBD Visual Odometry");
 }
 
 void VisualOdometry::initParams()
 {
   if (!nh_private_.getParam ("publish_tf", publish_tf_))
-    publish_tf_ = true;  
+    publish_tf_ = true;
   if (!nh_private_.getParam ("publish_path", publish_path_))
     publish_path_ = true;
   if (!nh_private_.getParam ("publish_odom", publish_odom_))
@@ -102,32 +102,32 @@ void VisualOdometry::initParams()
     queue_size_ = 5;
 
   // detector params
-  
+
   if (!nh_private_.getParam ("feature/publish_feature_cloud", publish_feature_cloud_))
     publish_feature_cloud_ = false;
   if (!nh_private_.getParam ("feature/publish_feature_covariances", publish_feature_cov_))
     publish_feature_cov_ = false;
   if (!nh_private_.getParam ("feature/detector_type", detector_type_))
     detector_type_ = "GFT";
-  
+
   resetDetector();
-  
+
   int smooth;
   double max_range, max_stdev;
-  
+
   if (!nh_private_.getParam ("feature/smooth", smooth))
     smooth = 0;
   if (!nh_private_.getParam ("feature/max_range", max_range))
     max_range = 5.5;
   if (!nh_private_.getParam ("feature/max_stdev", max_stdev))
     max_stdev = 0.03;
-  
+
   feature_detector_->setSmooth(smooth);
   feature_detector_->setMaxRange(max_range);
   feature_detector_->setMaxStDev(max_stdev);
-  
+
   // registration params
-  
+
   configureMotionEstimation();
 
   // diagnostic params
@@ -138,7 +138,7 @@ void VisualOdometry::initParams()
     save_diagnostics_ = false;
   if (!nh_private_.getParam("diagnostics_file_name", diagnostics_file_name_))
     diagnostics_file_name_ = "diagnostics.csv";
-  
+
   if(save_diagnostics_)
   {
     diagnostics_file_ = fopen(diagnostics_file_name_.c_str(), "w");
@@ -176,7 +176,7 @@ void VisualOdometry::configureMotionEstimation()
   int max_model_size;
   double max_corresp_dist_eucl;
   double max_assoc_dist_mah;
-  int n_nearest_neighbors;   
+  int n_nearest_neighbors;
 
   if (!nh_private_.getParam ("reg/ICPProbModel/tf_epsilon_linear", tf_epsilon_linear))
     tf_epsilon_linear = 1e-4; // 1 mm
@@ -193,13 +193,13 @@ void VisualOdometry::configureMotionEstimation()
   if (!nh_private_.getParam ("reg/ICPProbModel/max_assoc_dist_mah", max_assoc_dist_mah))
     max_assoc_dist_mah = 10.0;
   if (!nh_private_.getParam ("reg/ICPProbModel/n_nearest_neighbors", n_nearest_neighbors))
-    n_nearest_neighbors = 4;      
-    
+    n_nearest_neighbors = 4;
+
   if (!nh_private_.getParam ("reg/ICPProbModel/publish_model_cloud", publish_model_cloud_))
     publish_model_cloud_ = false;
   if (!nh_private_.getParam ("reg/ICPProbModel/publish_model_covariances", publish_model_cov_))
-    publish_model_cov_ = false; 
-    
+    publish_model_cov_ = false;
+
   motion_estimation_.setTfEpsilonLinear(tf_epsilon_linear);
   motion_estimation_.setTfEpsilonAngular(tf_epsilon_angular);
   motion_estimation_.setMaxIterations(max_iterations);
@@ -211,19 +211,19 @@ void VisualOdometry::configureMotionEstimation()
 }
 
 void VisualOdometry::resetDetector()
-{  
+{
   gft_config_server_.reset();
   star_config_server_.reset();
   orb_config_server_.reset();
   surf_config_server_.reset();
-  
+
   if (detector_type_ == "ORB")
-  { 
+  {
     ROS_INFO("Creating ORB detector");
     feature_detector_.reset(new rgbdtools::OrbDetector());
-    orb_config_server_.reset(new 
+    orb_config_server_.reset(new
       OrbDetectorConfigServer(ros::NodeHandle(nh_private_, "feature/ORB")));
-    
+
     // dynamic reconfigure
     OrbDetectorConfigServer::CallbackType f = boost::bind(
       &VisualOdometry::orbReconfigCallback, this, _1, _2);
@@ -233,9 +233,9 @@ void VisualOdometry::resetDetector()
   {
     ROS_INFO("Creating SURF detector");
     feature_detector_.reset(new rgbdtools::SurfDetector());
-    surf_config_server_.reset(new 
+    surf_config_server_.reset(new
       SurfDetectorConfigServer(ros::NodeHandle(nh_private_, "feature/SURF")));
-    
+
     // dynamic reconfigure
     SurfDetectorConfigServer::CallbackType f = boost::bind(
       &VisualOdometry::surfReconfigCallback, this, _1, _2);
@@ -245,9 +245,9 @@ void VisualOdometry::resetDetector()
   {
     ROS_INFO("Creating GFT detector");
     feature_detector_.reset(new rgbdtools::GftDetector());
-    gft_config_server_.reset(new 
+    gft_config_server_.reset(new
       GftDetectorConfigServer(ros::NodeHandle(nh_private_, "feature/GFT")));
-    
+
     // dynamic reconfigure
     GftDetectorConfigServer::CallbackType f = boost::bind(
       &VisualOdometry::gftReconfigCallback, this, _1, _2);
@@ -257,21 +257,33 @@ void VisualOdometry::resetDetector()
   {
     ROS_INFO("Creating STAR detector");
     feature_detector_.reset(new rgbdtools::StarDetector());
-    star_config_server_.reset(new 
+    star_config_server_.reset(new
       StarDetectorConfigServer(ros::NodeHandle(nh_private_, "feature/STAR")));
-    
+
     // dynamic reconfigure
     StarDetectorConfigServer::CallbackType f = boost::bind(
       &VisualOdometry::starReconfigCallback, this, _1, _2);
     star_config_server_->setCallback(f);
   }
+  else if (detector_type_ == "FAST")
+  {
+    ROS_INFO("Creating FAST detector");
+    feature_detector_.reset(new rgbdtools::FastDetector());
+    fast_config_server_.reset(new
+      FastDetectorConfigServer(ros::NodeHandle(nh_private_, "feature/FAST")));
+
+    // dynamic reconfigure
+    FastDetectorConfigServer::CallbackType f = boost::bind(
+      &VisualOdometry::fastReconfigCallback, this, _1, _2);
+    fast_config_server_->setCallback(f);
+  }
   else
   {
     ROS_FATAL("%s is not a valid detector type! Using GFT", detector_type_.c_str());
     feature_detector_.reset(new rgbdtools::GftDetector());
-    gft_config_server_.reset(new 
+    gft_config_server_.reset(new
       GftDetectorConfigServer(ros::NodeHandle(nh_private_, "feature/GFT")));
-    
+
     // dynamic reconfigure
     GftDetectorConfigServer::CallbackType f = boost::bind(
       &VisualOdometry::gftReconfigCallback, this, _1, _2);
@@ -301,7 +313,7 @@ void VisualOdometry::RGBDCallback(
 
   ros::WallTime start_frame = ros::WallTime::now();
   rgbdtools::RGBDFrame frame;
-  createRGBDFrameFromROSMessages(rgb_msg, depth_msg, info_msg, frame); 
+  createRGBDFrameFromROSMessages(rgb_msg, depth_msg, info_msg, frame);
   ros::WallTime end_frame = ros::WallTime::now();
 
   // **** find features ************************************************
@@ -311,7 +323,7 @@ void VisualOdometry::RGBDCallback(
   ros::WallTime end_features = ros::WallTime::now();
 
   // **** registration *************************************************
-  
+
   ros::WallTime start_reg = ros::WallTime::now();
   AffineTransform m = motion_estimation_.getMotionEstimation(frame);
   tf::Transform motion = tfFromEigenAffine(m);
@@ -319,15 +331,15 @@ void VisualOdometry::RGBDCallback(
   ros::WallTime end_reg = ros::WallTime::now();
 
   // **** publish outputs **********************************************
-  
+
   if (publish_tf_)    publishTf(rgb_msg->header);
   if (publish_odom_)  publishOdom(rgb_msg->header);
   if (publish_path_)  publishPath(rgb_msg->header);
   if (publish_pose_)  publishPoseStamped(rgb_msg->header);
-  
+
   if (publish_feature_cloud_) publishFeatureCloud(frame);
   if (publish_feature_cov_) publishFeatureCovariances(frame);
-  
+
   if (publish_model_cloud_) publishModelCloud();
   if (publish_model_cov_)   publishModelCovariances();
 
@@ -336,7 +348,7 @@ void VisualOdometry::RGBDCallback(
   ros::WallTime end = ros::WallTime::now();
 
   frame_count_++;
-  
+
   int n_features = frame.keypoints.size();
   int n_valid_features = frame.n_valid_keypoints;
   int n_model_pts = motion_estimation_.getModelSize();
@@ -371,7 +383,7 @@ void VisualOdometry::publishPoseStamped(const std_msgs::Header& header)
   geometry_msgs::PoseStamped::Ptr pose_stamped_msg;
   pose_stamped_msg = boost::make_shared<geometry_msgs::PoseStamped>();
   pose_stamped_msg->header.stamp    = header.stamp;
-  pose_stamped_msg->header.frame_id = fixed_frame_;      
+  pose_stamped_msg->header.frame_id = fixed_frame_;
   tf::poseTFToMsg(f2b_, pose_stamped_msg->pose);
   pose_stamped_publisher_.publish(pose_stamped_msg);
 }
@@ -415,35 +427,43 @@ bool VisualOdometry::getBaseToCameraTf(const std_msgs::Header& header)
 
 void VisualOdometry::gftReconfigCallback(GftDetectorConfig& config, uint32_t level)
 {
-  rgbdtools::GftDetectorPtr gft_detector = 
+  rgbdtools::GftDetectorPtr gft_detector =
     boost::static_pointer_cast<rgbdtools::GftDetector>(feature_detector_);
-    
+
   gft_detector->setNFeatures(config.n_features);
-  gft_detector->setMinDistance(config.min_distance); 
+  gft_detector->setMinDistance(config.min_distance);
 }
 
 void VisualOdometry::starReconfigCallback(StarDetectorConfig& config, uint32_t level)
 {
-  rgbdtools::StarDetectorPtr star_detector = 
+  rgbdtools::StarDetectorPtr star_detector =
     boost::static_pointer_cast<rgbdtools::StarDetector>(feature_detector_);
-    
+
   star_detector->setThreshold(config.threshold);
-  star_detector->setMinDistance(config.min_distance); 
+  star_detector->setMinDistance(config.min_distance);
+}
+
+void VisualOdometry::fastReconfigCallback(FastDetectorConfig& config, uint32_t level)
+{
+  rgbdtools::FastDetectorPtr fast_detector =
+    boost::static_pointer_cast<rgbdtools::FastDetector>(feature_detector_);
+
+  fast_detector->setThreshold(config.threshold);
 }
 
 void VisualOdometry::surfReconfigCallback(SurfDetectorConfig& config, uint32_t level)
 {
-  rgbdtools::SurfDetectorPtr surf_detector = 
+  rgbdtools::SurfDetectorPtr surf_detector =
     boost::static_pointer_cast<rgbdtools::SurfDetector>(feature_detector_);
-    
+
   surf_detector->setThreshold(config.threshold);
 }
-    
+
 void VisualOdometry::orbReconfigCallback(OrbDetectorConfig& config, uint32_t level)
 {
-  rgbdtools::OrbDetectorPtr orb_detector = 
+  rgbdtools::OrbDetectorPtr orb_detector =
     boost::static_pointer_cast<rgbdtools::OrbDetector>(feature_detector_);
-    
+
   orb_detector->setThreshold(config.threshold);
   orb_detector->setNFeatures(config.n_features);
 }
@@ -477,8 +497,8 @@ void VisualOdometry::diagnostics(
 
 void VisualOdometry::publishFeatureCloud(rgbdtools::RGBDFrame& frame)
 {
-  PointCloudFeature feature_cloud; 
-  frame.constructFeaturePointCloud(feature_cloud);   
+  PointCloudFeature feature_cloud;
+  frame.constructFeaturePointCloud(feature_cloud);
   feature_cloud_publisher_.publish(feature_cloud);
 }
 

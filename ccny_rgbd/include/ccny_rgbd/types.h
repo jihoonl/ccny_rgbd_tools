@@ -44,6 +44,7 @@
 #include "ccny_rgbd/StarDetectorConfig.h"
 #include "ccny_rgbd/SurfDetectorConfig.h"
 #include "ccny_rgbd/OrbDetectorConfig.h"
+#include "ccny_rgbd/FastDetectorConfig.h"
 
 namespace ccny_rgbd {
 
@@ -114,6 +115,9 @@ typedef boost::shared_ptr<SurfDetectorConfigServer> SurfDetectorConfigServerPtr;
 
 typedef dynamic_reconfigure::Server<OrbDetectorConfig> OrbDetectorConfigServer;
 typedef boost::shared_ptr<OrbDetectorConfigServer> OrbDetectorConfigServerPtr; 
+
+typedef dynamic_reconfigure::Server<FastDetectorConfig> FastDetectorConfigServer;
+typedef boost::shared_ptr<FastDetectorConfigServer> FastDetectorConfigServerPtr;
 
 } // namespace ccny_rgbd
 

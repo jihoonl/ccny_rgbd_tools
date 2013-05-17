@@ -40,6 +40,7 @@
 #include "ccny_rgbd/StarDetectorConfig.h"
 #include "ccny_rgbd/SurfDetectorConfig.h"
 #include "ccny_rgbd/OrbDetectorConfig.h"
+#include "ccny_rgbd/FastDetectorConfig.h"
 
 namespace ccny_rgbd {
 
@@ -92,6 +93,7 @@ class VisualOdometry
     StarDetectorConfigServerPtr star_config_server_;  ///< ROS dynamic reconfigure server for STAR params
     SurfDetectorConfigServerPtr surf_config_server_;  ///< ROS dynamic reconfigure server for SURF params
     OrbDetectorConfigServerPtr orb_config_server_;    ///< ROS dynamic reconfigure server for ORB params
+    FastDetectorConfigServerPtr fast_config_server_;   ///< ROS dynamic reconfigure server for FAST params
         
     /** @brief Image transport for RGB message subscription */
     boost::shared_ptr<ImageTransport> rgb_it_;
@@ -240,6 +242,10 @@ class VisualOdometry
     /** @brief ROS dynamic reconfigure callback function for ORB
      */
     void orbReconfigCallback(OrbDetectorConfig& config, uint32_t level);
+
+    /** @brief ROS dynamic reconfigure callback function for ORB
+      */
+    void fastReconfigCallback(FastDetectorConfig& config, uint32_t level);
 
     /**
      * @brief Saves computed running times to file (or print on screen)
