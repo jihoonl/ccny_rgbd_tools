@@ -27,7 +27,7 @@ PLUGINLIB_DECLARE_CLASS(ccny_rgbd, VisualOdometryNodelet, VisualOdometryNodelet,
 
 void VisualOdometryNodelet::onInit()
 {
-  NODELET_INFO("Initializing RGBD Image Proc Nodelet");
+  NODELET_INFO("Initializing Visual Odometry Nodelet");
   
   // TODO: Do we want the single threaded or multithreaded NH?
   ros::NodeHandle nh         = getMTNodeHandle();
