@@ -74,7 +74,19 @@ rosbuild_add_executable(visual_odometry_node
   src/apps/visual_odometry.cpp
   src/util.cpp)
   
+rosbuild_add_library(visual_odometry_nodelet
+  src/nodelet/visual_odometry_nodelet.cpp
+  src/apps/visual_odometry.cpp
+  src/util.cpp)
+  
 target_link_libraries (visual_odometry_node
+  rgbdtools
+  boost_signals
+  boost_system
+  boost_filesystem
+  ${OpenCV_LIBRARIES})
+  
+  target_link_libraries (visual_odometry_nodelet
   rgbdtools
   boost_signals
   boost_system
