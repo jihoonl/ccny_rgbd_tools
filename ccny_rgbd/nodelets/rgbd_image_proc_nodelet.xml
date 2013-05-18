@@ -15,3 +15,11 @@
     </description>
   </class>
 </library>
+<library path="lib/libkeyframe_sender_nodelet">
+  <class name="ccny_rgbd/KeyframeSenderNodelet" type="KeyframeSenderNodelet" 
+    base_class_type="nodelet::Nodelet">
+    <description>
+      Keyframe Sender nodelet.
+    </description>
+  </class>
+</library>

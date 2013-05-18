@@ -86,11 +86,34 @@ target_link_libraries (visual_odometry_node
   boost_filesystem
   ${OpenCV_LIBRARIES})
   
-  target_link_libraries (visual_odometry_nodelet
+target_link_libraries (visual_odometry_nodelet
   rgbdtools
   boost_signals
   boost_system
   boost_filesystem
+  ${OpenCV_LIBRARIES})
+  
+  
+################################################################
+# Build keyframe sender application
+################################################################
+
+rosbuild_add_executable(keyframe_sender
+  src/node/keyframe_sender_node.cpp
+  src/apps/keyframe_sender.cpp
+  src/util.cpp)
+
+rosbuild_add_library(keyframe_sender_nodelet
+  src/nodelet/keyframe_sender_nodelet.cpp
+  src/apps/keyframe_sender.cpp
+  src/util.cpp)
+
+target_link_libraries (keyframe_sender
+  rgbdtools
+  ${OpenCV_LIBRARIES})
+
+target_link_libraries (keyframe_sender_nodelet
+  rgbdtools
   ${OpenCV_LIBRARIES})
   
 
