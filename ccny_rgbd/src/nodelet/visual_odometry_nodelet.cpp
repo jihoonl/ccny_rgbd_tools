@@ -33,7 +33,7 @@ void VisualOdometryNodelet::onInit()
   ros::NodeHandle nh         = getMTNodeHandle();
   ros::NodeHandle nh_private = getMTPrivateNodeHandle();
 
-  visual_odometry_ = new VisualOdometry(nh, nh_private);
+  visual_odometry_.reset(new VisualOdometry(nh, nh_private));
 }
 
 } // namespace ccny_rgbd

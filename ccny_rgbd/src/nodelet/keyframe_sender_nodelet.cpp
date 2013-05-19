@@ -33,7 +33,7 @@ void KeyframeSenderNodelet::onInit()
   ros::NodeHandle nh         = getMTNodeHandle();
   ros::NodeHandle nh_private = getMTPrivateNodeHandle();
 
-  keyframe_sender_ = new KeyframeSender(nh, nh_private);
+  keyframe_sender_.reset(new KeyframeSender(nh, nh_private));
 }
 
 } // namespace ccny_rgbd

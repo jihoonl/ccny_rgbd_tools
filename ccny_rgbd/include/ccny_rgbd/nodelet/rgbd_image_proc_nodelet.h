@@ -39,7 +39,7 @@ class RGBDImageProcNodelet : public nodelet::Nodelet
     virtual void onInit();
 
   private:
-    RGBDImageProc * rgbd_image_proc_;  // FIXME: change to smart pointer
+    boost::shared_ptr<RGBDImageProc> rgbd_image_proc_;
 };
 
 } // namespace ccny_rgbd

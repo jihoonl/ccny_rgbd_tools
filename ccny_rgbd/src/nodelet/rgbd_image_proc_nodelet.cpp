@@ -33,7 +33,7 @@ void RGBDImageProcNodelet::onInit()
   ros::NodeHandle nh         = getMTNodeHandle();
   ros::NodeHandle nh_private = getMTPrivateNodeHandle();
 
-  rgbd_image_proc_ = new RGBDImageProc(nh, nh_private);
+  rgbd_image_proc_.reset(new RGBDImageProc(nh, nh_private));
 }
 
 } // namespace ccny_rgbd

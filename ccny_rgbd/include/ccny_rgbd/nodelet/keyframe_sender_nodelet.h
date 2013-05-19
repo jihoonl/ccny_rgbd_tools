@@ -39,7 +39,7 @@ class KeyframeSenderNodelet : public nodelet::Nodelet
     virtual void onInit();
 
   private:
-    KeyframeSender * keyframe_sender_;  // FIXME: change to smart pointer
+    boost::shared_ptr<KeyframeSender> keyframe_sender_;
 };
 
 } // namespace ccny_rgbd

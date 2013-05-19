@@ -39,7 +39,7 @@ class VisualOdometryNodelet : public nodelet::Nodelet
     virtual void onInit();
 
   private:
-    VisualOdometry * visual_odometry_;  // FIXME: change to smart pointer
+    boost::shared_ptr<VisualOdometry> visual_odometry_;
 };
 
 } // namespace ccny_rgbd
