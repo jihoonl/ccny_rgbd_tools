@@ -375,6 +375,17 @@ void VisualOdometry::publishOdom(const std_msgs::Header& header)
   odom.header.stamp = header.stamp;
   odom.header.frame_id = fixed_frame_;
   tf::poseTFToMsg(f2b_, odom.pose.pose);
+
+  double cov[36] = {	1e-3, 	0,		0,		0,		0,		0,
+		  	  	  	  	0, 		1e-3,	0,		0,		0,		0,
+		  	  	  	  	0, 		0,		1e-3,	0,		0,		0,
+		  	  	  	  	0, 		0,		0,		1e-3,	0,		0,
+		  	  	  	  	0, 		0,		0,		0,		1e-3,	0,
+		  	  	  	  	0, 		0,		0,		0,		0,		1e-3};
+
+
+  std::copy(cov, cov+36, odom.pose.covariance.begin());
+
   odom_publisher_.publish(odom);
 }
 
