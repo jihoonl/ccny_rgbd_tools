@@ -75,8 +75,12 @@ KeyframeMapper::KeyframeMapper(
   ImageTransport rgb_it(nh_);
   ImageTransport depth_it(nh_);
 
-  sub_rgb_.subscribe(rgb_it,     "/rgbd/rgb",   queue_size_);
-  sub_depth_.subscribe(depth_it, "/rgbd/depth", queue_size_);
+  image_transport::TransportHints rgb_th("compressed");
+  image_transport::TransportHints depth_th("compressedDepth");
+
+
+  sub_rgb_.subscribe(rgb_it,     "/rgbd/rgb",   queue_size_, rgb_th);
+  sub_depth_.subscribe(depth_it, "/rgbd/depth", queue_size_, depth_th);
   sub_info_.subscribe(nh_,       "/rgbd/info",  queue_size_);
 
   // Synchronize inputs.

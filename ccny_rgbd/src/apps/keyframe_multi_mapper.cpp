@@ -55,18 +55,12 @@ KeyframeMultiMapper::KeyframeMultiMapper(
     "publish_keyframe", &KeyframeMultiMapper::publishKeyframeSrvCallback, this);
   pub_keyframes_service_ = nh_.advertiseService(
     "publish_keyframes", &KeyframeMultiMapper::publishKeyframesSrvCallback, this);
-  save_kf_service_ = nh_.advertiseService(
-    "save_keyframes", &KeyframeMultiMapper::saveKeyframesSrvCallback, this);
-  load_kf_service_ = nh_.advertiseService(
-    "load_keyframes", &KeyframeMultiMapper::loadKeyframesSrvCallback, this);
   save_pcd_map_service_ = nh_.advertiseService(
     "save_pcd_map", &KeyframeMultiMapper::savePcdMapSrvCallback, this);
   save_octomap_service_ = nh_.advertiseService(
     "save_octomap", &KeyframeMultiMapper::saveOctomapSrvCallback, this);
   add_manual_keyframe_service_ = nh_.advertiseService(
     "add_manual_keyframe", &KeyframeMultiMapper::addManualKeyframeSrvCallback, this);
-  generate_graph_service_ = nh_.advertiseService(
-    "generate_graph", &KeyframeMultiMapper::generateGraphSrvCallback, this);
    solve_graph_service_ = nh_.advertiseService(
     "solve_graph", &KeyframeMultiMapper::solveGraphSrvCallback, this);
  
@@ -97,7 +91,6 @@ KeyframeMultiMapper::~KeyframeMultiMapper()
 
 void KeyframeMultiMapper::initParams()
 {
-  bool verbose;
   
   if (!nh_private_.getParam ("verbose", verbose))
     verbose = false;
@@ -123,10 +116,6 @@ void KeyframeMultiMapper::initParams()
     max_map_z_ = std::numeric_limits<double>::infinity();
    
   // configure graph detection 
-    
-  int graph_n_keypoints;        
-  int graph_n_candidates;
-  int graph_k_nearest_neighbors;
   bool graph_matcher_use_desc_ratio_test = true;
     
   if (!nh_private_.getParam ("graph/n_keypoints", graph_n_keypoints))
@@ -144,6 +133,28 @@ void KeyframeMultiMapper::initParams()
   graph_detector_.setSACReestimateTf(false);
   graph_detector_.setSACSaveResults(false);
   graph_detector_.setVerbose(verbose);
+
+
+
+
+
+   matcher_use_desc_ratio_test_ = true;
+   matcher_max_desc_ratio_ = 0.75;  // when ratio_test = true
+   matcher_max_desc_dist_ = 0.5;    // when ratio_test = false
+
+   // common SAC params
+   sac_max_eucl_dist_sq_ = 0.03 * 0.03;
+   sac_min_inliers_ = 30;  // this or more are needed
+   sac_reestimate_tf_ = false;
+
+   // RANSAC params
+   ransac_confidence_ = 0.99;
+   ransac_max_iterations_ = 1000;
+   ransac_sufficient_inlier_ratio_ = 0.75;
+
+   // derived parameters
+   log_one_minus_ransac_confidence_ = log(1.0 - ransac_confidence_);
+
 }
   
 void KeyframeMultiMapper::RGBDCallback(
@@ -172,7 +183,7 @@ void KeyframeMultiMapper::RGBDCallback(
   frame.index = rgbd_frame_index_;
   rgbd_frame_index_++;
   
-  bool result = processFrame(frame, eigenAffineFromTf(transform));
+  bool result = processFrame(frame, transform);
   if (result) publishKeyframeData(keyframes_.size() - 1);
   
   publishPath();
@@ -182,11 +193,11 @@ void KeyframeMultiMapper::RGBDCallback(
 
 bool KeyframeMultiMapper::processFrame(
   const rgbdtools::RGBDFrame& frame, 
-  const AffineTransform& pose)
+  const tf::StampedTransform & pose)
 {
   // add the frame pose to the path vector
   geometry_msgs::PoseStamped frame_pose; 
-  tf::Transform frame_tf = tfFromEigenAffine(pose);
+  tf::Transform frame_tf = pose;
   tf::poseTFToMsg(frame_tf, frame_pose.pose);
  
   // update the header of the pose for the path
@@ -196,49 +207,96 @@ bool KeyframeMultiMapper::processFrame(
   frame_pose.header.stamp.nsec = frame.header.stamp.nsec;
     
   path_msg_.poses.push_back(frame_pose);
-   
-  // determine if a new keyframe is needed
-  /*bool result;
 
-  if(keyframes_.empty() || manual_add_)
-  {
-    result = true;
+  rgbdtools::RGBDKeyframe keyframe(frame);
+  keyframe.pose = eigenAffineFromTf(pose);
+
+  cv::SurfDescriptorExtractor extractor;
+
+  double surf_threshold = 400;
+  double min_surf_threshold = 25;
+  bool upright = true;
+
+  while (surf_threshold >= min_surf_threshold) {
+		cv::SurfFeatureDetector detector(surf_threshold, 4, 2, true, upright);
+		keyframe.keypoints.clear();
+		detector.detect(keyframe.rgb_img, keyframe.keypoints);
+
+		if ((int) keyframe.keypoints.size() < graph_n_keypoints) {
+			if (verbose)
+				printf(
+						"[KF %d] %d SURF keypoints detected (threshold: %.1f)\n",
+						(int) keyframes_.size() + 1,
+						(int) keyframe.keypoints.size(), surf_threshold);
+
+			surf_threshold /= 2.0;
+		} else {
+			keyframe.keypoints.resize(graph_n_keypoints);
+
+			if (verbose)
+				printf(
+						"[KF %d] %d SURF keypoints detected (threshold: %.1f)\n",
+						(int) keyframes_.size() + 1,
+						(int) keyframe.keypoints.size(), surf_threshold);
+
+			break;
+		}
+	}
+
+
+  extractor.compute(keyframe.rgb_img, keyframe.keypoints, keyframe.descriptors);
+  keyframe.computeDistributions();
+
+
+  // build matcher
+  cv::Ptr<cv::flann::IndexParams> indexParams;
+  indexParams = new cv::flann::KDTreeIndexParams();
+
+  cv::Ptr<cv::flann::SearchParams> searchParams = new cv::flann::SearchParams(32);
+  keyframe.matcher = cv::FlannBasedMatcher(indexParams, searchParams);
+
+
+  // train
+  std::vector<cv::Mat> descriptors_vector;
+  descriptors_vector.push_back(keyframe.descriptors);
+  keyframe.matcher.add(descriptors_vector);
+  keyframe.matcher.train();
+
+  tbb::concurrent_vector<rgbdtools::RGBDKeyframe>::iterator current_keyframe_it, it;
+
+  current_keyframe_it = keyframes_.push_back(keyframe);
+
+  for(it = keyframes_.begin(); it != current_keyframe_it; it++){
+
+	  std::vector<cv::DMatch> inlier_matches;
+
+	  // perform ransac matching, b onto a
+	  Eigen::Matrix4f transformation;
+
+	  int iterations = pairwiseMatchingRANSAC(
+	        *it, *current_keyframe_it, inlier_matches, transformation);
+
+
+	  if (inlier_matches.size() >= sac_min_inliers_) {
+
+			// add an association
+			rgbdtools::KeyframeAssociation association;
+			association.type = rgbdtools::KeyframeAssociation::RANSAC;
+			association.it_a = it;
+			association.it_b = current_keyframe_it;
+			association.matches = inlier_matches;
+			association.a2b = transformation;
+			associations_.push_back(association);
+
+		}
+
   }
-  else
-  {
-    double dist, angle;
-    getTfDifference(tfFromEigenAffine(pose), 
-                    tfFromEigenAffine(keyframes_.back().pose), 
-                    dist, angle);
 
-    if (dist > kf_dist_eps_ || angle > kf_angle_eps_)
-      result = true;
-    else 
-      result = false;
-  }
 
-  if (result)
-  {*/
-    addKeyframe(frame, pose);
-  //}
+
   return true;
 }
 
-void KeyframeMultiMapper::addKeyframe(
-  const rgbdtools::RGBDFrame& frame, 
-  const AffineTransform& pose)
-{
-  rgbdtools::RGBDKeyframe keyframe(frame);
-  keyframe.pose = pose;
-  
-  if (manual_add_)
-  {
-    ROS_INFO("Adding frame manually");
-    manual_add_ = false;
-    keyframe.manually_added = true;
-  }
-  keyframes_.push_back(keyframe); 
-}
 
 bool KeyframeMultiMapper::publishKeyframeSrvCallback(
   PublishKeyframe::Request& request,
@@ -310,66 +368,6 @@ void KeyframeMultiMapper::publishKeyframeData(int i)
   keyframes_pub_.publish(cloud_ff);
 }
 
-void KeyframeMultiMapper::publishKeyframeAssociations()
-{
-  visualization_msgs::Marker marker;
-  marker.header.stamp = ros::Time::now();
-  marker.header.frame_id = fixed_frame_;
-  marker.id = 0;
-  marker.type = visualization_msgs::Marker::LINE_LIST;
-  marker.action = visualization_msgs::Marker::ADD;
-
-  marker.points.resize(associations_.size() * 2);
-  
-  marker.color.a = 1.0;
-
-  for (unsigned int as_idx = 0; as_idx < associations_.size(); ++as_idx)
-  {
-    // set up shortcut references
-    const rgbdtools::KeyframeAssociation& association = associations_[as_idx];
-    int kf_idx_a = association.kf_idx_a;
-    int kf_idx_b = association.kf_idx_b;
-    rgbdtools::RGBDKeyframe& keyframe_a = keyframes_[kf_idx_a];
-    rgbdtools::RGBDKeyframe& keyframe_b = keyframes_[kf_idx_b];
-
-    int idx_start = as_idx*2;
-    int idx_end   = as_idx*2 + 1;
-
-    tf::Transform keyframe_a_pose = tfFromEigenAffine(keyframe_a.pose);
-    tf::Transform keyframe_b_pose = tfFromEigenAffine(keyframe_b.pose);
- 
-    // start point for the edge
-    marker.points[idx_start].x = keyframe_a_pose.getOrigin().getX();  
-    marker.points[idx_start].y = keyframe_a_pose.getOrigin().getY();
-    marker.points[idx_start].z = keyframe_a_pose.getOrigin().getZ();
-
-    // end point for the edge
-    marker.points[idx_end].x = keyframe_b_pose.getOrigin().getX();  
-    marker.points[idx_end].y = keyframe_b_pose.getOrigin().getY();
-    marker.points[idx_end].z = keyframe_b_pose.getOrigin().getZ();
-
-    if (association.type == rgbdtools::KeyframeAssociation::VO)
-    {
-      marker.ns = "VO";
-      marker.scale.x = 0.002;
-
-      marker.color.r = 0.0;
-      marker.color.g = 1.0;
-      marker.color.b = 0.0;
-    }
-    else if (association.type == rgbdtools::KeyframeAssociation::RANSAC)
-    {
-      marker.ns = "RANSAC";
-      marker.scale.x = 0.002;
-      
-      marker.color.r = 1.0;
-      marker.color.g = 1.0;
-      marker.color.b = 0.0;
-    }
-
-    kf_assoc_pub_.publish(marker);
-  }
-}
 
 void KeyframeMultiMapper::publishKeyframePoses()
 {
@@ -449,46 +447,6 @@ void KeyframeMultiMapper::publishKeyframePose(int i)
   poses_pub_.publish(marker_text);
 }
 
-bool KeyframeMultiMapper::saveKeyframesSrvCallback(
-  Save::Request& request,
-  Save::Response& response)
-{
-  std::string filepath = request.filename;
- 
-  ROS_INFO("Saving keyframes...");
-  std::string filepath_keyframes = filepath + "/keyframes/";
-  bool result_kf = saveKeyframes(keyframes_, filepath_keyframes);
-  if (result_kf) ROS_INFO("Keyframes saved to %s", filepath.c_str());
-  else ROS_ERROR("Keyframe saving failed!");
-  
-  ROS_INFO("Saving path...");
-  bool result_path = savePath(filepath);
-  savePathTUMFormat(filepath);
-  if (result_path ) ROS_INFO("Path saved to %s", filepath.c_str());
-  else ROS_ERROR("Path saving failed!");
-    
-  return result_kf && result_path;
-}
-
-bool KeyframeMultiMapper::loadKeyframesSrvCallback(
-  Load::Request& request,
-  Load::Response& response)
-{
-  std::string filepath = request.filename;
-  
-  ROS_INFO("Loading keyframes...");
-  std::string filepath_keyframes = filepath + "/keyframes/";
-  bool result_kf = loadKeyframes(keyframes_, filepath_keyframes); 
-  if (result_kf) ROS_INFO("Keyframes loaded successfully");
-  else ROS_ERROR("Keyframe loading failed!");
-  
-  ROS_INFO("Loading path...");
-  bool result_path = loadPath(filepath);
-  if (result_path) ROS_INFO("Path loaded successfully");
-  else ROS_ERROR("Path loading failed!");
-  
-  return result_kf && result_path;
-}
 
 bool KeyframeMultiMapper::savePcdMapSrvCallback(
   Save::Request& request,
@@ -527,20 +485,7 @@ bool KeyframeMultiMapper::addManualKeyframeSrvCallback(
   return true;
 }
 
-bool KeyframeMultiMapper::generateGraphSrvCallback(
-  GenerateGraph::Request& request,
-  GenerateGraph::Response& response)
-{
-  associations_.clear();
-  graph_detector_.generateKeyframeAssociations(keyframes_, associations_);
 
-  ROS_INFO("%d associations detected", (int)associations_.size());
-  
-  publishKeyframePoses();
-  publishKeyframeAssociations();
-
-  return true;
-}
 
 bool KeyframeMultiMapper::solveGraphSrvCallback(
   SolveGraph::Request& request,
@@ -549,7 +494,7 @@ bool KeyframeMultiMapper::solveGraphSrvCallback(
   ros::WallTime start = ros::WallTime::now();
   
   // Graph solving: keyframe positions only, path is interpolated
-  graph_solver_.solve(keyframes_, associations_);
+  //graph_solver_.solve(keyframes_, associations_);
   updatePathFromKeyframePoses();
     
   // Graph solving: keyframe positions and VO path
@@ -566,7 +511,7 @@ bool KeyframeMultiMapper::solveGraphSrvCallback(
     
   publishPath();
   publishKeyframePoses();
-  publishKeyframeAssociations();
+  //publishKeyframeAssociations();
 
   return true;
 }
@@ -925,6 +870,203 @@ bool KeyframeMultiMapper::loadPath(const std::string& filepath)
     
   file.close();
   return true;
+}
+
+
+// frame_a = train, frame_b = query
+void KeyframeMultiMapper::getCandidateMatches(
+   rgbdtools::RGBDKeyframe& frame_q, rgbdtools::RGBDKeyframe& frame_t,
+  cv::FlannBasedMatcher& matcher,
+  rgbdtools::DMatchVector& candidate_matches)
+{
+  // **** build candidate matches ***********************************
+  // assumes detectors and distributions are computed
+  // establish all matches from b to a
+
+  if (matcher_use_desc_ratio_test_)
+  {
+    std::vector<rgbdtools::DMatchVector> all_matches2;
+
+    matcher.knnMatch(
+      frame_q.descriptors, all_matches2, 2);
+
+    for (unsigned int m_idx = 0; m_idx < all_matches2.size(); ++m_idx)
+    {
+      const cv::DMatch& match1 = all_matches2[m_idx][0];
+      const cv::DMatch& match2 = all_matches2[m_idx][1];
+
+      double ratio =  match1.distance / match2.distance;
+
+      // remove bad matches - ratio test, valid keypoints
+      if (ratio < matcher_max_desc_ratio_)
+      {
+        int idx_q = match1.queryIdx;
+        int idx_t = match1.trainIdx;
+
+        if (frame_t.kp_valid[idx_t] && frame_q.kp_valid[idx_q])
+          candidate_matches.push_back(match1);
+      }
+    }
+  }
+  else
+  {
+	rgbdtools::DMatchVector all_matches;
+
+    matcher.match(
+      frame_q.descriptors, all_matches);
+
+    for (unsigned int m_idx = 0; m_idx < all_matches.size(); ++m_idx)
+    {
+      const cv::DMatch& match = all_matches[m_idx];
+
+      // remove bad matches - descriptor distance, valid keypoints
+      if (match.distance < matcher_max_desc_dist_)
+      {
+        int idx_q = match.queryIdx;
+        int idx_t = match.trainIdx;
+
+        if (frame_t.kp_valid[idx_t] && frame_q.kp_valid[idx_q])
+          candidate_matches.push_back(match);
+      }
+    }
+  }
+}
+
+// frame_a = train, frame_b = query
+int KeyframeMultiMapper::pairwiseMatchingRANSAC(
+  rgbdtools::RGBDKeyframe& frame_t,
+  rgbdtools::RGBDKeyframe& frame_q,
+  rgbdtools::DMatchVector& best_inlier_matches,
+  Eigen::Matrix4f& best_transformation)
+{
+  // constants
+  int min_sample_size = 3;
+
+  rgbdtools::DMatchVector candidate_matches;
+  getCandidateMatches(frame_q, frame_t, frame_t.matcher, candidate_matches);
+
+  // check if enough matches are present
+  if (candidate_matches.size() < min_sample_size)  return 0;
+  if (candidate_matches.size() < sac_min_inliers_) return 0;
+
+  // **** build 3D features for SVD ********************************
+
+  PointCloudFeature features_t, features_q;
+
+  features_t.resize(candidate_matches.size());
+  features_q.resize(candidate_matches.size());
+
+  for (int m_idx = 0; m_idx < candidate_matches.size(); ++m_idx)
+  {
+    const cv::DMatch& match = candidate_matches[m_idx];
+    int idx_q = match.queryIdx;
+    int idx_t = match.trainIdx;
+
+    PointFeature& p_t = features_t[m_idx];
+    p_t.x = frame_t.kp_means[idx_t](0,0);
+    p_t.y = frame_t.kp_means[idx_t](1,0);
+    p_t.z = frame_t.kp_means[idx_t](2,0);
+
+    PointFeature& p_q = features_q[m_idx];
+    p_q.x = frame_q.kp_means[idx_q](0,0);
+    p_q.y = frame_q.kp_means[idx_q](1,0);
+    p_q.z = frame_q.kp_means[idx_q](2,0);
+  }
+
+  // **** main RANSAC loop ****************************************
+
+  TransformationEstimationSVD svd;
+  Eigen::Matrix4f transformation; // transformation used inside loop
+  best_inlier_matches.clear();
+  int iteration = 0;
+
+  std::set<int> mask;
+
+  while(true)
+  //for (iteration = 0; iteration < ransac_max_iterations_; ++iteration)
+  {
+    // generate random indices
+    IntVector sample_idx;
+    rgbdtools::get3RandomIndices(candidate_matches.size(), mask, sample_idx);
+
+    // build initial inliers from random indices
+    IntVector inlier_idx;
+    std::vector<cv::DMatch> inlier_matches;
+
+    for (unsigned int s_idx = 0; s_idx < sample_idx.size(); ++s_idx)
+    {
+      int m_idx = sample_idx[s_idx];
+      inlier_idx.push_back(m_idx);
+      inlier_matches.push_back(candidate_matches[m_idx]);
+    }
+
+    // estimate transformation from minimum set of random samples
+    svd.estimateRigidTransformation(
+      features_q, inlier_idx,
+      features_t, inlier_idx,
+      transformation);
+
+    // evaluate transformation fitness by checking distance to all points
+    PointCloudFeature features_q_tf;
+    pcl::transformPointCloud(features_q, features_q_tf, transformation);
+
+    for (int m_idx = 0; m_idx < candidate_matches.size(); ++m_idx)
+    {
+      // euclidedan distance test
+      const PointFeature& p_t = features_t[m_idx];
+      const PointFeature& p_q = features_q_tf[m_idx];
+      float eucl_dist_sq = rgbdtools::distEuclideanSq(p_t, p_q);
+
+      if (eucl_dist_sq < sac_max_eucl_dist_sq_)
+      {
+        inlier_idx.push_back(m_idx);
+        inlier_matches.push_back(candidate_matches[m_idx]);
+
+        // reestimate transformation from all inliers
+        if (sac_reestimate_tf_)
+        {
+          svd.estimateRigidTransformation(
+            features_q, inlier_idx,
+            features_t, inlier_idx,
+            transformation);
+          pcl::transformPointCloud(features_q, features_q_tf, transformation);
+        }
+      }
+    }
+
+    // check if inliers are better than the best model so far
+    if (inlier_matches.size() > best_inlier_matches.size())
+    {
+      svd.estimateRigidTransformation(
+        features_q, inlier_idx,
+        features_t, inlier_idx,
+        transformation);
+
+      best_transformation = transformation;
+      best_inlier_matches = inlier_matches;
+    }
+
+    double best_inlier_ratio = (double) best_inlier_matches.size() /
+                               (double) candidate_matches.size();
+
+    // **** termination: iterations + inlier ratio
+    if(best_inlier_matches.size() < sac_min_inliers_)
+    {
+      if (iteration >= ransac_max_iterations_) break;
+    }
+    // **** termination: confidence ratio test
+    else
+    {
+      double h = log_one_minus_ransac_confidence_ /
+                log(1.0 - pow(best_inlier_ratio, min_sample_size));
+
+      if (iteration > (int)(h+1)) break;
+    }
+
+    iteration++;
+  }
+
+  return iteration;
 }
 
 } // namespace ccny_rgbd

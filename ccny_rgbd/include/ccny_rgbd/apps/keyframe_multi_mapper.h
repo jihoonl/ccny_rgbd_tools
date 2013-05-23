@@ -39,6 +39,7 @@
 #include <octomap/OcTree.h>
 #include <octomap/ColorOcTree.h>
 #include <rgbdtools/rgbdtools.h>
+#include <tbb/concurrent_vector.h>
 
 #include "ccny_rgbd/types.h"
 #include "ccny_rgbd/util.h"
@@ -186,7 +187,8 @@ class KeyframeMultiMapper
     double max_range_;  ///< Maximum threshold for  range (in the z-coordinate of the camera frame)
     double max_stdev_;  ///< Maximum threshold for range (z-coordinate) standard deviation
 
-    rgbdtools::KeyframeVector keyframes_;    ///< vector of RGBD Keyframes
+    //rgbdtools::KeyframeVector keyframes_;    ///< vector of RGBD Keyframes
+    tbb::concurrent_vector<rgbdtools::RGBDKeyframe> keyframes_;
     
     /** @brief Main callback for RGB, Depth, and CameraInfo messages
      * 
@@ -259,6 +261,25 @@ class KeyframeMultiMapper
     double kf_angle_eps_; ///< angular distance threshold between keyframes
     bool octomap_with_color_; ///< whetehr to save Octomaps with color info      
     double max_map_z_;   ///< maximum z (in fixed frame) when exporting maps.
+
+    bool verbose;
+    int graph_n_keypoints;
+    int graph_n_candidates;
+    int graph_k_nearest_neighbors;
+
+
+    int ransac_max_iterations_;
+	int sac_min_inliers_;
+	bool matcher_use_desc_ratio_test_;
+	double matcher_max_desc_ratio_;
+	double matcher_max_desc_dist_;
+	double sac_max_eucl_dist_sq_;
+	bool sac_reestimate_tf_;
+	double ransac_sufficient_inlier_ratio_;
+	double ransac_confidence_;
+	double log_one_minus_ransac_confidence_;
+
+
           
     // state vars
     bool manual_add_;   ///< flag indicating whetehr a manual add has been requested
@@ -268,10 +289,23 @@ class KeyframeMultiMapper
     rgbdtools::KeyframeGraphDetector graph_detector_;  ///< builds graph from the keyframes
     rgbdtools::KeyframeGraphSolverG2O graph_solver_;    ///< optimizes the graph for global alignement
 
-    rgbdtools::KeyframeAssociationVector associations_; ///< keyframe associations that form the graph
+    tbb::concurrent_vector<rgbdtools::KeyframeAssociation> associations_;
+    //rgbdtools::KeyframeAssociationVector associations_; ///< keyframe associations that form the graph
     
     PathMsg path_msg_;    /// < contains a vector of positions of the camera (not base) pose
     
+
+    void getCandidateMatches(
+      rgbdtools::RGBDKeyframe& frame_q, rgbdtools::RGBDKeyframe& frame_t,
+      cv::FlannBasedMatcher& matcher,
+      rgbdtools::DMatchVector& candidate_matches);
+
+    int pairwiseMatchingRANSAC(
+      rgbdtools::RGBDKeyframe& frame_t,
+      rgbdtools::RGBDKeyframe& frame_q,
+      rgbdtools::DMatchVector& best_inlier_matches,
+      Eigen::Matrix4f& best_transformation);
+
     /** @brief processes an incoming RGBD frame with a given pose,
      * and determines whether a keyframe should be inserted
      * @param frame the incoming RGBD frame (image)
@@ -279,14 +313,7 @@ class KeyframeMultiMapper
      * @retval true a keyframe was inserted
      * @retval false no keyframe was inserted
      */
-    bool processFrame(const rgbdtools::RGBDFrame& frame, const AffineTransform& pose);
-    
-    /** @brief creates a keyframe from an RGBD frame and inserts it in
-     * the keyframe vector.
-     * @param frame the incoming RGBD frame (image)
-     * @param pose the pose of the base frame when RGBD image was taken
-     */
-    void addKeyframe(const rgbdtools::RGBDFrame& frame, const AffineTransform& pose);
+    bool processFrame(const rgbdtools::RGBDFrame& frame, const tf::StampedTransform& pose);
 
     /** @brief Publishes the point cloud associated with a keyframe
      * @param i the keyframe index

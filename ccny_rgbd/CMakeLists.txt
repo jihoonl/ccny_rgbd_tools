@@ -58,6 +58,7 @@ if(NOT ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "armv7l")
 	  g2o_solver_csparse 
 	  g2o_types_slam3d
 	  cholmod)
+	  
 
 endif(NOT ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "armv7l")
 
@@ -135,6 +136,26 @@ if(NOT ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "armv7l")
 	  boost_system
 	  boost_filesystem
 	  boost_regex
+	  ${OpenCV_LIBRARIES}
+	  ${G2O_LIBRARIES})
+	  
+	  
+	################################################################
+	# Build keyframe multi mapper application
+	################################################################
+
+	rosbuild_add_executable(keyframe_multi_mapper_node
+	  src/node/keyframe_multi_mapper_node.cpp
+	  src/apps/keyframe_multi_mapper.cpp
+	  src/util.cpp)
+	  
+	target_link_libraries (keyframe_multi_mapper_node
+	  rgbdtools
+	  boost_signals
+	  boost_system
+	  boost_filesystem
+	  boost_regex
+	  tbb
 	  ${OpenCV_LIBRARIES}
 	  ${G2O_LIBRARIES})
 	  
