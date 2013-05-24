@@ -38,6 +38,7 @@ KeyframeMultiMapper::KeyframeMultiMapper(
   
   initParams();
   
+  map_to_odom.setIdentity();
 
   optimizer.setMethod(g2o::SparseOptimizer::LevenbergMarquardt);
   optimizer.setVerbose(true);
@@ -95,6 +96,7 @@ KeyframeMultiMapper::KeyframeMultiMapper(
   sync_->registerCallback(boost::bind(&KeyframeMultiMapper::RGBDCallback, this, _1, _2, _3));
 
   boost::thread t(boost::bind(&KeyframeMultiMapper::optimizationLoop, this));
+  boost::thread t1(boost::bind(&KeyframeMultiMapper::publishMapTransform, this));
 
 }
 
@@ -111,7 +113,7 @@ void KeyframeMultiMapper::initParams()
   if (!nh_private_.getParam ("queue_size", queue_size_))
     queue_size_ = 5;
   if (!nh_private_.getParam ("fixed_frame", fixed_frame_))
-    fixed_frame_ = "/odom";
+    fixed_frame_ = "/map";
   if (!nh_private_.getParam ("pcd_map_res", pcd_map_res_))
     pcd_map_res_ = 0.01;
   if (!nh_private_.getParam ("octomap_res", octomap_res_))
@@ -169,6 +171,9 @@ void KeyframeMultiMapper::initParams()
    // derived parameters
    log_one_minus_ransac_confidence_ = log(1.0 - ransac_confidence_);
 
+   sac_save_results_ = true;
+   output_path_ = "/home/vsu/mapping_debug";
+
 }
   
 void KeyframeMultiMapper::RGBDCallback(
@@ -199,7 +204,7 @@ void KeyframeMultiMapper::RGBDCallback(
   
 
   bool result = processFrame(frame, transform);
-  //if (result) publishKeyframeData(keyframes_.size() - 1);
+  if (result) publishKeyframeData(keyframes_.size() - 1);
 
   //publishPath();
 }
@@ -257,6 +262,16 @@ bool KeyframeMultiMapper::processFrame(
 			break;
 		}
 	}
+
+
+  if (sac_save_results_)
+  {
+	cv::Mat kp_img;
+	cv::drawKeypoints(keyframe.rgb_img, keyframe.keypoints, kp_img);
+	std::stringstream ss1;
+	ss1 << "kp_" << keyframe.header.seq;
+	cv::imwrite(output_path_ + "/" + ss1.str() + ".png", kp_img);
+  }
 
 
   extractor.compute(keyframe.rgb_img, keyframe.keypoints, keyframe.descriptors);
@@ -374,6 +389,8 @@ void KeyframeMultiMapper::optimizationLoop() {
 		// update the keyframe poses
 		printf("Updating keyframe poses...\n");
 
+		rgbdtools::Pose pose_before_optimization = keyframes_[current_keyframes_size-1].pose;
+
 		AffineTransformVector optimized_poses;
 		optimized_poses.resize(current_keyframes_size);
 		getOptimizedPoses(optimized_poses);
@@ -383,11 +400,26 @@ void KeyframeMultiMapper::optimizationLoop() {
 			keyframe.pose = optimized_poses[kf_idx];
 		}
 
+		rgbdtools::Pose pose_after_optimization = keyframes_[current_keyframes_size-1].pose;
+
+		map_to_odom = tfFromEigenAffine(pose_before_optimization.inverse()*pose_after_optimization);
 
 	}
 }
 
+void KeyframeMultiMapper::publishMapTransform() {
 
+	printf("Initialized map to odom transform sender\n");
+
+	while(true){
+		tf::StampedTransform transform_msg(
+		  map_to_odom, ros::Time::now(), fixed_frame_, "/odom");
+		  tf_broadcaster_.sendTransform (transform_msg);
+
+		  usleep(33333);
+	}
+
+}
 
 bool KeyframeMultiMapper::publishKeyframeSrvCallback(
   PublishKeyframe::Request& request,

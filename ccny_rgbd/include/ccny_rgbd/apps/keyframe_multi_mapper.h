@@ -33,6 +33,7 @@
 #include <pcl_ros/transforms.h>
 #include <pcl/filters/passthrough.h>
 #include <tf/transform_listener.h>
+#include <tf/transform_broadcaster.h>
 #include <visualization_msgs/Marker.h>
 #include <boost/regex.hpp>
 #include <octomap/octomap.h>
@@ -278,6 +279,8 @@ class KeyframeMultiMapper
 	double ransac_sufficient_inlier_ratio_;
 	double ransac_confidence_;
 	double log_one_minus_ransac_confidence_;
+	bool sac_save_results_;
+	std::string output_path_;
 
 
           
@@ -327,7 +330,10 @@ class KeyframeMultiMapper
     void optimizeGraph();
 
     void getOptimizedPoses(AffineTransformVector& poses);
+    void publishMapTransform();
 
+    tf::Transform map_to_odom;
+    tf::TransformBroadcaster tf_broadcaster_;
 
 
 
