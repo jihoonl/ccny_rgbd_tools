@@ -42,18 +42,18 @@ ImageDownsampler::ImageDownsampler(
   // **** publishers
 
   pub_rgb_ = rgb_it.advertise(
-      "/rgbd/rgb_downsampled", queue_size_);
+      "/rgb/image_downsampled", queue_size_);
   pub_depth_ = depth_it.advertise(
-      "/rgbd/depth_downsampled", queue_size_);
+      "/depth/image_downsampled", queue_size_);
   pub_info_  = nh_.advertise<CameraInfoMsg>(
-      "/rgbd/info_downsampled", queue_size_);
+      "/rgb/camera_info_downsampled", queue_size_);
 
   
   // **** subscribers
 
-  sub_rgb_.subscribe(rgb_it,     "/rgbd/rgb",   queue_size_);
-  sub_depth_.subscribe(depth_it, "/rgbd/depth", queue_size_);
-  sub_info_.subscribe(nh_,       "/rgbd/info",  queue_size_);
+  sub_rgb_.subscribe(rgb_it,     "/rgb/image_raw",   queue_size_);
+  sub_depth_.subscribe(depth_it, "/depth/image_raw", queue_size_);
+  sub_info_.subscribe(nh_,       "/rgb/camera_info",  queue_size_);
 
   // Synchronize inputs.
   sync_.reset(new RGBDSynchronizer3(
