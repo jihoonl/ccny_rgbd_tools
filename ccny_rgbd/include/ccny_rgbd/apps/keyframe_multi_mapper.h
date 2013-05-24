@@ -296,15 +296,40 @@ class KeyframeMultiMapper
     
 
     void getCandidateMatches(
-      rgbdtools::RGBDKeyframe& frame_q, rgbdtools::RGBDKeyframe& frame_t,
-      cv::FlannBasedMatcher& matcher,
+      const rgbdtools::RGBDKeyframe& frame_q, const rgbdtools::RGBDKeyframe& frame_t,
       rgbdtools::DMatchVector& candidate_matches);
 
     int pairwiseMatchingRANSAC(
-      rgbdtools::RGBDKeyframe& frame_t,
-      rgbdtools::RGBDKeyframe& frame_q,
+      const rgbdtools::RGBDKeyframe& frame_t,
+      const rgbdtools::RGBDKeyframe& frame_q,
       rgbdtools::DMatchVector& best_inlier_matches,
       Eigen::Matrix4f& best_transformation);
+
+
+    void optimizationLoop();
+
+
+    g2o::SparseOptimizer optimizer;
+    g2o::BlockSolverX::LinearSolverType * linearSolver;
+    g2o::BlockSolverX * solver_ptr;
+
+
+    void addVertex(
+      const AffineTransform& vertex_pose,
+      int vertex_idx);
+
+    void addEdge(
+      int from_idx,
+      int to_idx,
+      const AffineTransform& relative_pose,
+      const Eigen::Matrix<double,6,6>& information_matrix);
+
+    void optimizeGraph();
+
+    void getOptimizedPoses(AffineTransformVector& poses);
+
+
+
 
     /** @brief processes an incoming RGBD frame with a given pose,
      * and determines whether a keyframe should be inserted

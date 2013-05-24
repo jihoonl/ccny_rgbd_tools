@@ -32,12 +32,23 @@ KeyframeMultiMapper::KeyframeMultiMapper(
   nh_private_(nh_private),
   rgbd_frame_index_(0)
 {
-  ROS_INFO("Starting RGBD Keyframe Mapper");
+  ROS_INFO("Starting RGBD Keyframe Multi Mapper");
    
   // **** params
   
   initParams();
   
+
+  optimizer.setMethod(g2o::SparseOptimizer::LevenbergMarquardt);
+  optimizer.setVerbose(true);
+
+  linearSolver = new g2o::LinearSolverCholmod<
+			g2o::BlockSolverX::PoseMatrixType>();
+
+  solver_ptr = new g2o::BlockSolverX(&optimizer, linearSolver);
+  optimizer.setSolver(solver_ptr);
+
+
   // **** publishers
   
   keyframes_pub_ = nh_.advertise<PointCloudT>(
@@ -82,6 +93,9 @@ KeyframeMultiMapper::KeyframeMultiMapper(
                 RGBDSyncPolicy3(queue_size_), sub_rgb_, sub_depth_, sub_info_));
    
   sync_->registerCallback(boost::bind(&KeyframeMultiMapper::RGBDCallback, this, _1, _2, _3));
+
+  boost::thread t(boost::bind(&KeyframeMultiMapper::optimizationLoop, this));
+
 }
 
 KeyframeMultiMapper::~KeyframeMultiMapper()
@@ -183,16 +197,17 @@ void KeyframeMultiMapper::RGBDCallback(
   frame.index = rgbd_frame_index_;
   rgbd_frame_index_++;
   
+
   bool result = processFrame(frame, transform);
-  if (result) publishKeyframeData(keyframes_.size() - 1);
-  
-  publishPath();
+  //if (result) publishKeyframeData(keyframes_.size() - 1);
+
+  //publishPath();
 }
 
 
 
 bool KeyframeMultiMapper::processFrame(
-  const rgbdtools::RGBDFrame& frame, 
+  const rgbdtools::RGBDFrame& frame,
   const tf::StampedTransform & pose)
 {
   // add the frame pose to the path vector
@@ -253,14 +268,14 @@ bool KeyframeMultiMapper::processFrame(
   indexParams = new cv::flann::KDTreeIndexParams();
 
   cv::Ptr<cv::flann::SearchParams> searchParams = new cv::flann::SearchParams(32);
-  keyframe.matcher = cv::FlannBasedMatcher(indexParams, searchParams);
+  keyframe.matcher.reset(new cv::FlannBasedMatcher(indexParams, searchParams));
 
 
   // train
   std::vector<cv::Mat> descriptors_vector;
   descriptors_vector.push_back(keyframe.descriptors);
-  keyframe.matcher.add(descriptors_vector);
-  keyframe.matcher.train();
+  keyframe.matcher->add(descriptors_vector);
+  keyframe.matcher->train();
 
   tbb::concurrent_vector<rgbdtools::RGBDKeyframe>::iterator current_keyframe_it, it;
 
@@ -293,9 +308,85 @@ bool KeyframeMultiMapper::processFrame(
   }
 
 
+  std::cerr << "Finnished processing frame " << keyframes_.size() << " " << associations_.size() << std::endl;
 
   return true;
 }
+
+
+
+void KeyframeMultiMapper::optimizationLoop() {
+
+	printf("Initialized Optimization loop\n");
+
+	int last_processed_keyframe = 0;
+	int last_processed_association = 0;
+
+	int update_on_n_new_keyframes = 10;
+
+	while (true) {
+
+		int current_keyframes_size = keyframes_.size();
+		int current_associations_size = associations_.size();
+
+		if ((current_keyframes_size - last_processed_keyframe) < update_on_n_new_keyframes) {
+			sleep(1);
+			continue;
+		} else {
+			last_processed_keyframe = current_keyframes_size;
+			last_processed_association = current_associations_size;
+		}
+
+
+		for (int i=0; i < current_keyframes_size; i++) {
+			rgbdtools::RGBDKeyframe& keyframe =
+					keyframes_[i];
+			keyframe.index = i;
+			addVertex(keyframe.pose, i);
+		}
+
+		rgbdtools::InformationMatrix ransac_inf =
+				rgbdtools::InformationMatrix::Identity();
+
+		for (int i=0; i < current_associations_size; i++) {
+
+			const rgbdtools::KeyframeAssociation& association =
+					associations_[i];
+
+			// skip non-ransac associations
+			if (association.type != rgbdtools::KeyframeAssociation::RANSAC)
+				continue;
+
+			// calculate the information matrix
+			int n_matches = association.matches.size();
+			rgbdtools::InformationMatrix inf = ransac_inf;
+
+			// add the edge
+			addEdge(association.it_a->index, association.it_b->index,
+					association.a2b, inf);
+		}
+
+
+		// run the optimization
+		printf("Optimizing...\n");
+		optimizeGraph();
+
+		// update the keyframe poses
+		printf("Updating keyframe poses...\n");
+
+		AffineTransformVector optimized_poses;
+		optimized_poses.resize(current_keyframes_size);
+		getOptimizedPoses(optimized_poses);
+
+		for (int kf_idx = 0; kf_idx < current_keyframes_size; ++kf_idx) {
+			rgbdtools::RGBDKeyframe& keyframe = keyframes_[kf_idx];
+			keyframe.pose = optimized_poses[kf_idx];
+		}
+
+
+	}
+}
+
 
 
 bool KeyframeMultiMapper::publishKeyframeSrvCallback(
@@ -875,8 +966,7 @@ bool KeyframeMultiMapper::loadPath(const std::string& filepath)
 
 // frame_a = train, frame_b = query
 void KeyframeMultiMapper::getCandidateMatches(
-   rgbdtools::RGBDKeyframe& frame_q, rgbdtools::RGBDKeyframe& frame_t,
-  cv::FlannBasedMatcher& matcher,
+		const rgbdtools::RGBDKeyframe& frame_q, const rgbdtools::RGBDKeyframe& frame_t,
   rgbdtools::DMatchVector& candidate_matches)
 {
   // **** build candidate matches ***********************************
@@ -887,7 +977,7 @@ void KeyframeMultiMapper::getCandidateMatches(
   {
     std::vector<rgbdtools::DMatchVector> all_matches2;
 
-    matcher.knnMatch(
+    frame_t.matcher->knnMatch(
       frame_q.descriptors, all_matches2, 2);
 
     for (unsigned int m_idx = 0; m_idx < all_matches2.size(); ++m_idx)
@@ -912,7 +1002,7 @@ void KeyframeMultiMapper::getCandidateMatches(
   {
 	rgbdtools::DMatchVector all_matches;
 
-    matcher.match(
+	frame_t.matcher->match(
       frame_q.descriptors, all_matches);
 
     for (unsigned int m_idx = 0; m_idx < all_matches.size(); ++m_idx)
@@ -934,8 +1024,8 @@ void KeyframeMultiMapper::getCandidateMatches(
 
 // frame_a = train, frame_b = query
 int KeyframeMultiMapper::pairwiseMatchingRANSAC(
-  rgbdtools::RGBDKeyframe& frame_t,
-  rgbdtools::RGBDKeyframe& frame_q,
+  const rgbdtools::RGBDKeyframe& frame_t,
+  const rgbdtools::RGBDKeyframe& frame_q,
   rgbdtools::DMatchVector& best_inlier_matches,
   Eigen::Matrix4f& best_transformation)
 {
@@ -943,7 +1033,7 @@ int KeyframeMultiMapper::pairwiseMatchingRANSAC(
   int min_sample_size = 3;
 
   rgbdtools::DMatchVector candidate_matches;
-  getCandidateMatches(frame_q, frame_t, frame_t.matcher, candidate_matches);
+  getCandidateMatches(frame_q, frame_t, candidate_matches);
 
   // check if enough matches are present
   if (candidate_matches.size() < min_sample_size)  return 0;
@@ -1068,5 +1158,142 @@ int KeyframeMultiMapper::pairwiseMatchingRANSAC(
 
   return iteration;
 }
+
+
+
+
+void KeyframeMultiMapper::addVertex(
+  const AffineTransform& vertex_pose,
+  int vertex_idx)
+{
+  // TODO: use eigen quaternion, not manual conversion
+  //Transform Eigen::Matrix4f into 3D traslation and rotation for g2o
+  double yaw,pitch,roll;
+  yaw   = atan2f(vertex_pose(1,0),vertex_pose(0,0));
+  pitch = asinf(-vertex_pose(2,0));
+  roll  = atan2f(vertex_pose(2,1),vertex_pose(2,2));
+
+  g2o::Vector3d t(vertex_pose(0,3),vertex_pose(1,3),vertex_pose(2,3));
+  g2o::Quaterniond q;
+  q.x()=sin(roll/2)*cos(pitch/2)*cos(yaw/2)-cos(roll/2)*sin(pitch/2)*sin(yaw/2);
+  q.y()=cos(roll/2)*sin(pitch/2)*cos(yaw/2)+sin(roll/2)*cos(pitch/2)*sin(yaw/2);
+  q.z()=cos(roll/2)*cos(pitch/2)*sin(yaw/2)-sin(roll/2)*sin(pitch/2)*cos(yaw/2);
+  q.w()=cos(roll/2)*cos(pitch/2)*cos(yaw/2)+sin(roll/2)*sin(pitch/2)*sin(yaw/2);
+
+  g2o::SE3Quat pose(q,t); // vertex pose
+
+  // TODO: smart pointers
+
+  // set up node
+  g2o::VertexSE3 *vc = new g2o::VertexSE3();
+  vc->estimate() = pose;
+  vc->setId(vertex_idx);
+
+  // set first pose fixed
+  if (vertex_idx == 0)
+    vc->setFixed(true);
+
+  // add to optimizer
+  optimizer.addVertex(vc);
+}
+
+void KeyframeMultiMapper::addEdge(
+  int from_idx,
+  int to_idx,
+  const AffineTransform& relative_pose,
+  const Eigen::Matrix<double,6,6>& information_matrix)
+{
+  // TODO: use eigen quaternion, not manual conversion
+  //Transform Eigen::Matrix4f into 3D traslation and rotation for g2o
+  double yaw,pitch,roll;
+  yaw   = atan2f(relative_pose(1,0),relative_pose(0,0));
+  pitch = asinf(-relative_pose(2,0));
+  roll  = atan2f(relative_pose(2,1),relative_pose(2,2));
+
+  g2o::Vector3d t(relative_pose(0,3),relative_pose(1,3),relative_pose(2,3));
+  g2o::Quaterniond q;
+  q.x()=sin(roll/2)*cos(pitch/2)*cos(yaw/2)-cos(roll/2)*sin(pitch/2)*sin(yaw/2);
+  q.y()=cos(roll/2)*sin(pitch/2)*cos(yaw/2)+sin(roll/2)*cos(pitch/2)*sin(yaw/2);
+  q.z()=cos(roll/2)*cos(pitch/2)*sin(yaw/2)-sin(roll/2)*sin(pitch/2)*cos(yaw/2);
+  q.w()=cos(roll/2)*cos(pitch/2)*cos(yaw/2)+sin(roll/2)*sin(pitch/2)*sin(yaw/2);
+
+  // relative transformation
+  g2o::SE3Quat transf(q,t);
+
+  // TODO: smart pointers
+
+  g2o::EdgeSE3* edge = new g2o::EdgeSE3;
+  edge->vertices()[0] = optimizer.vertex(from_idx);
+  edge->vertices()[1] = optimizer.vertex(to_idx);
+  edge->setMeasurement(transf);
+
+  //Set the information matrix
+  edge->setInformation(information_matrix);
+
+  optimizer.addEdge(edge);
+}
+
+void KeyframeMultiMapper::optimizeGraph()
+{
+  //Prepare and run the optimization
+  optimizer.initializeOptimization();
+
+  //Set the initial Levenberg-Marquardt lambda
+  optimizer.setUserLambdaInit(0.01);
+
+  //Run optimization
+  optimizer.optimize(20);
+}
+
+void KeyframeMultiMapper::getOptimizedPoses(AffineTransformVector& poses)
+{
+  for (unsigned int idx = 0; idx < poses.size(); ++idx)
+  {
+    //Transform the vertex pose from G2O quaternion to Eigen::Matrix4f
+    g2o::VertexSE3* vertex = dynamic_cast<g2o::VertexSE3*>(optimizer.vertex(idx));
+    double optimized_pose_quat[7];
+    vertex->getEstimateData(optimized_pose_quat);
+
+    AffineTransform optimized_pose;
+    double qx,qy,qz,qr,qx2,qy2,qz2,qr2;
+
+    qx=optimized_pose_quat[3];
+    qy=optimized_pose_quat[4];
+    qz=optimized_pose_quat[5];
+    qr=optimized_pose_quat[6];
+    qx2=qx*qx;
+    qy2=qy*qy;
+    qz2=qz*qz;
+    qr2=qr*qr;
+
+    optimized_pose(0,0)=qr2+qx2-qy2-qz2;
+    optimized_pose(0,1)=2*(qx*qy-qr*qz);
+    optimized_pose(0,2)=2*(qz*qx+qr*qy);
+    optimized_pose(0,3)=optimized_pose_quat[0];
+    optimized_pose(1,0)=2*(qx*qy+qr*qz);
+    optimized_pose(1,1)=qr2-qx2+qy2-qz2;
+    optimized_pose(1,2)=2*(qy*qz-qr*qx);
+    optimized_pose(1,3)=optimized_pose_quat[1];
+    optimized_pose(2,0)=2*(qz*qx-qr*qy);
+    optimized_pose(2,1)=2*(qy*qz+qr*qx);
+    optimized_pose(2,2)=qr2-qx2-qy2+qz2;
+    optimized_pose(2,3)=optimized_pose_quat[2];
+
+    //Set the optimized pose to the vector of poses
+    poses[idx] = optimized_pose;
+  }
+}
+
+
+
+
+
+
+
+
+
+
+
+
 
 } // namespace ccny_rgbd

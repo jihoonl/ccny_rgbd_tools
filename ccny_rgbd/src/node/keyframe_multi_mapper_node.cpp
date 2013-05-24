@@ -29,6 +29,10 @@ int main(int argc, char** argv)
   ros::NodeHandle nh;
   ros::NodeHandle nh_private("~");
   ccny_rgbd::KeyframeMultiMapper kmm(nh, nh_private);
-  ros::spin();
+
+  ros::MultiThreadedSpinner spinner;
+  spinner.spin();
+
+
   return 0;
 }
