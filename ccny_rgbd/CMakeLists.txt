@@ -117,6 +117,22 @@ target_link_libraries (keyframe_sender_nodelet
   rgbdtools
   ${OpenCV_LIBRARIES})
   
+  
+################################################################
+# Build image downsampler application
+################################################################
+
+rosbuild_add_executable(image_downsampler
+  src/node/image_downsampler_node.cpp
+  src/apps/image_downsampler.cpp
+  src/util.cpp)
+
+
+target_link_libraries (image_downsampler
+  rgbdtools
+  ${OpenCV_LIBRARIES})
+
+  
 
 
 if(NOT ${CMAKE_HOST_SYSTEM_PROCESSOR} STREQUAL "armv7l")
