@@ -268,7 +268,7 @@ void VisualOdometry::resetDetector()
   else if (detector_type_ == "FAST")
   {
     ROS_INFO("Creating FAST detector");
-    feature_detector_.reset(new rgbdtools::FastDetector());
+    feature_detector_.reset(new rgbdtools::FastDetector(100));
     fast_config_server_.reset(new
       FastDetectorConfigServer(ros::NodeHandle(nh_private_, "feature/FAST")));
 
@@ -277,6 +277,18 @@ void VisualOdometry::resetDetector()
       &VisualOdometry::fastReconfigCallback, this, _1, _2);
     fast_config_server_->setCallback(f);
   }
+  else if (detector_type_ == "BRISK")
+   {
+     ROS_INFO("Creating BRISK detector");
+     feature_detector_.reset(new rgbdtools::BriskDetector(100));
+     //fast_config_server_.reset(new
+     //  FastDetectorConfigServer(ros::NodeHandle(nh_private_, "feature/FAST")));
+
+     // dynamic reconfigure
+     //FastDetectorConfigServer::CallbackType f = boost::bind(
+     //  &VisualOdometry::fastReconfigCallback, this, _1, _2);
+     //fast_config_server_->setCallback(f);
+   }
   else
   {
     ROS_FATAL("%s is not a valid detector type! Using GFT", detector_type_.c_str());
