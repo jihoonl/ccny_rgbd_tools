@@ -356,15 +356,15 @@ void KeyframeMultiMapper::optimizationLoop() {
 	int last_processed_keyframe = 0;
 	int last_processed_association = 0;
 
-	int update_on_n_new_keyframes = 5;
+	int update_on_n_new_keyframes = 3;
 
 	while (true) {
 
 		int current_keyframes_size = keyframes_.size();
 		int current_associations_size = associations_.size();
 
-		if ((current_keyframes_size - last_processed_keyframe) < update_on_n_new_keyframes) {
-		//`if(current_keyframes_size < 5 || current_associations_size < 5) {
+		//if ((current_keyframes_size - last_processed_keyframe) < update_on_n_new_keyframes) {
+		if(current_keyframes_size < 5 || current_associations_size < 5) {
 			sleep(1);
 			continue;
 		} else {
@@ -422,11 +422,11 @@ void KeyframeMultiMapper::optimizationLoop() {
 
 		rgbdtools::Pose pose_after_optimization = keyframes_[current_keyframes_size-1].pose;
 
-		//map_to_odom = tfFromEigenAffine(pose_after_optimization.inverse() * pose_before_optimization);
+		map_to_odom = tfFromEigenAffine(pose_after_optimization * pose_before_optimization.inverse() * eigenAffineFromTf(map_to_odom) );
 
 		PointCloudT::Ptr map(new PointCloudT), filtered_map(new PointCloudT);
 
-		float voxel_size = 0.025f;
+		float voxel_size = 0.02f;
 
 		for (int i = 0; i < current_keyframes_size; i++) {
 			rgbdtools::RGBDKeyframe& keyframe = keyframes_[i];
