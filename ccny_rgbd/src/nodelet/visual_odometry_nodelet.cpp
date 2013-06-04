@@ -30,8 +30,8 @@ void VisualOdometryNodelet::onInit()
   NODELET_INFO("Initializing Visual Odometry Nodelet");
   
   // TODO: Do we want the single threaded or multithreaded NH?
-  ros::NodeHandle nh         = getMTNodeHandle();
-  ros::NodeHandle nh_private = getMTPrivateNodeHandle();
+  ros::NodeHandle nh         = getNodeHandle();
+  ros::NodeHandle nh_private = getPrivateNodeHandle();
 
   visual_odometry_.reset(new VisualOdometry(nh, nh_private));
 }

@@ -100,7 +100,7 @@ void KeyframeMapper::initParams()
   bool verbose;
   
   if (!nh_private_.getParam ("verbose", verbose))
-    verbose = false;
+    verbose = true;
   if (!nh_private_.getParam ("queue_size", queue_size_))
     queue_size_ = 5;
   if (!nh_private_.getParam ("fixed_frame", fixed_frame_))
@@ -142,8 +142,9 @@ void KeyframeMapper::initParams()
   graph_detector_.setMatcherUseDescRatioTest(graph_matcher_use_desc_ratio_test);
   
   graph_detector_.setSACReestimateTf(false);
-  graph_detector_.setSACSaveResults(false);
+  graph_detector_.setSACSaveResults(true);
   graph_detector_.setVerbose(verbose);
+  graph_detector_.setOutputPath("/home/vsu/mapping_debug");
 }
   
 void KeyframeMapper::RGBDCallback(

@@ -89,8 +89,6 @@ void ImageDownsampler::RGBDCallback(
   const CameraInfoMsg::ConstPtr& info_msg)
 {
 
-
-
 	cv_bridge::CvImageConstPtr gray_image = cv_bridge::toCvShare(rgb_msg, sensor_msgs::image_encodings::MONO8);
 	cv_bridge::CvImageConstPtr depth_image = cv_bridge::toCvShare(depth_msg);
 

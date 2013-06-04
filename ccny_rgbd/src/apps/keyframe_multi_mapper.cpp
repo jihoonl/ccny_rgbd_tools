@@ -85,9 +85,9 @@ KeyframeMultiMapper::KeyframeMultiMapper(
   image_transport::TransportHints depth_th("compressedDepth");
 
 
-  sub_rgb_.subscribe(rgb_it,     "/rgbd/rgb",   queue_size_, rgb_th);
-  sub_depth_.subscribe(depth_it, "/rgbd/depth", queue_size_, depth_th);
-  sub_info_.subscribe(nh_,       "/rgbd/info",  queue_size_);
+  sub_rgb_.subscribe(rgb_it,     "/keyframes/rgb",   queue_size_, rgb_th);
+  sub_depth_.subscribe(depth_it, "/keyframes/depth", queue_size_, depth_th);
+  sub_info_.subscribe(nh_,       "/keyframes/info",  queue_size_);
 
   // Synchronize inputs.
   sync_.reset(new RGBDSynchronizer3(
@@ -160,7 +160,7 @@ void KeyframeMultiMapper::initParams()
 
    // common SAC params
    sac_max_eucl_dist_sq_ = 0.03 * 0.03;
-   sac_min_inliers_ = 30;  // this or more are needed
+   sac_min_inliers_ = 20;  // this or more are needed
    sac_reestimate_tf_ = false;
 
    // RANSAC params
@@ -204,7 +204,7 @@ void KeyframeMultiMapper::RGBDCallback(
   
 
   bool result = processFrame(frame, transform);
-  if (result) publishKeyframeData(keyframes_.size() - 1);
+  //if (result) publishKeyframeData(keyframes_.size() - 1);
 
   //publishPath();
 }
@@ -242,6 +242,8 @@ bool KeyframeMultiMapper::processFrame(
 		keyframe.keypoints.clear();
 		detector.detect(keyframe.rgb_img, keyframe.keypoints);
 
+
+
 		if ((int) keyframe.keypoints.size() < graph_n_keypoints) {
 			if (verbose)
 				printf(
@@ -261,6 +263,7 @@ bool KeyframeMultiMapper::processFrame(
 
 			break;
 		}
+
 	}
 
 
@@ -312,11 +315,27 @@ bool KeyframeMultiMapper::processFrame(
 			// add an association
 			rgbdtools::KeyframeAssociation association;
 			association.type = rgbdtools::KeyframeAssociation::RANSAC;
-			association.it_a = it;
-			association.it_b = current_keyframe_it;
+			association.it_a = current_keyframe_it;
+			association.it_b = it;
 			association.matches = inlier_matches;
 			association.a2b = transformation;
 			associations_.push_back(association);
+
+
+			ROS_INFO("Inliers size %d, K1 %d, K2 %d", inlier_matches.size(), it->keypoints.size(), current_keyframe_it->keypoints.size());
+
+			// save the results to file
+			if (sac_save_results_) {
+				cv::Mat img_matches;
+				cv::drawMatches(it->rgb_img, it->keypoints,
+						current_keyframe_it->rgb_img, current_keyframe_it->keypoints,
+						inlier_matches, img_matches);
+
+				std::stringstream ss1;
+				ss1 << it->header.seq << "_to_" << current_keyframe_it->header.seq;
+				cv::imwrite(output_path_ + "/" + ss1.str() + ".png",
+						img_matches);
+			}
 
 		}
 
@@ -337,7 +356,7 @@ void KeyframeMultiMapper::optimizationLoop() {
 	int last_processed_keyframe = 0;
 	int last_processed_association = 0;
 
-	int update_on_n_new_keyframes = 10;
+	int update_on_n_new_keyframes = 5;
 
 	while (true) {
 
@@ -345,6 +364,7 @@ void KeyframeMultiMapper::optimizationLoop() {
 		int current_associations_size = associations_.size();
 
 		if ((current_keyframes_size - last_processed_keyframe) < update_on_n_new_keyframes) {
+		//`if(current_keyframes_size < 5 || current_associations_size < 5) {
 			sleep(1);
 			continue;
 		} else {
@@ -402,7 +422,45 @@ void KeyframeMultiMapper::optimizationLoop() {
 
 		rgbdtools::Pose pose_after_optimization = keyframes_[current_keyframes_size-1].pose;
 
-		map_to_odom = tfFromEigenAffine(pose_before_optimization.inverse()*pose_after_optimization);
+		//map_to_odom = tfFromEigenAffine(pose_after_optimization.inverse() * pose_before_optimization);
+
+		PointCloudT::Ptr map(new PointCloudT), filtered_map(new PointCloudT);
+
+		float voxel_size = 0.025f;
+
+		for (int i = 0; i < current_keyframes_size; i++) {
+			rgbdtools::RGBDKeyframe& keyframe = keyframes_[i];
+
+			// construct a cloud from the images
+			PointCloudT cloud;
+			keyframe.constructDensePointCloud(cloud, max_range_, max_stdev_);
+
+			// cloud transformed to the fixed frame
+
+			PointCloudT::Ptr cloud_ff(new PointCloudT), cloud_ff_sub(new PointCloudT);
+
+			pcl::transformPointCloud(cloud, *cloud_ff, keyframe.pose);
+
+			pcl::VoxelGrid<PointT> sor1;
+			sor1.setInputCloud(cloud_ff);
+			sor1.setLeafSize(voxel_size, voxel_size, voxel_size);
+			sor1.filter(*cloud_ff_sub);
+
+
+			cloud_ff_sub->header.frame_id = fixed_frame_;
+
+			*map += *cloud_ff;
+
+		}
+
+		// Create the filtering object
+		pcl::VoxelGrid<PointT> sor;
+		sor.setInputCloud(map);
+		sor.setLeafSize(voxel_size, voxel_size, voxel_size);
+		sor.filter(*filtered_map);
+		filtered_map->header.frame_id = fixed_frame_;
+
+		keyframes_pub_.publish(filtered_map);
 
 	}
 }
@@ -1052,12 +1110,13 @@ void KeyframeMultiMapper::getCandidateMatches(
       }
     }
   }
+
 }
 
 // frame_a = train, frame_b = query
 int KeyframeMultiMapper::pairwiseMatchingRANSAC(
-  const rgbdtools::RGBDKeyframe& frame_t,
   const rgbdtools::RGBDKeyframe& frame_q,
+  const rgbdtools::RGBDKeyframe& frame_t,
   rgbdtools::DMatchVector& best_inlier_matches,
   Eigen::Matrix4f& best_transformation)
 {
@@ -1070,6 +1129,8 @@ int KeyframeMultiMapper::pairwiseMatchingRANSAC(
   // check if enough matches are present
   if (candidate_matches.size() < min_sample_size)  return 0;
   if (candidate_matches.size() < sac_min_inliers_) return 0;
+
+  ROS_INFO("Candidate matches %d", candidate_matches.size());
 
   // **** build 3D features for SVD ********************************
 

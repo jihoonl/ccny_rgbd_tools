@@ -30,8 +30,8 @@ void RGBDImageProcNodelet::onInit()
   NODELET_INFO("Initializing RGBD Image Proc Nodelet");
   
   // TODO: Do we want the single threaded or multithreaded NH?
-  ros::NodeHandle nh         = getMTNodeHandle();
-  ros::NodeHandle nh_private = getMTPrivateNodeHandle();
+  ros::NodeHandle nh         = getNodeHandle();
+  ros::NodeHandle nh_private = getPrivateNodeHandle();
 
   rgbd_image_proc_.reset(new RGBDImageProc(nh, nh_private));
 }

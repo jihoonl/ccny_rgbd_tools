@@ -30,8 +30,8 @@ void KeyframeSenderNodelet::onInit()
   NODELET_INFO("Initializing Keyframe Sender Nodelet");
   
   // TODO: Do we want the single threaded or multithreaded NH?
-  ros::NodeHandle nh         = getMTNodeHandle();
-  ros::NodeHandle nh_private = getMTPrivateNodeHandle();
+  ros::NodeHandle nh         = getNodeHandle();
+  ros::NodeHandle nh_private = getPrivateNodeHandle();
 
   keyframe_sender_.reset(new KeyframeSender(nh, nh_private));
 }
