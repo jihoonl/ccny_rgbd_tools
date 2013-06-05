@@ -76,11 +76,15 @@ void KeyframeSender::initParams()
   if (!nh_private_.getParam ("queue_size", queue_size_))
     queue_size_ = 5;
   if (!nh_private_.getParam ("fixed_frame", fixed_frame_))
-    fixed_frame_ = "/odom";
+    fixed_frame_ = "odom";
   if (!nh_private_.getParam ("kf_dist_eps", kf_dist_eps_))
     kf_dist_eps_  = 0.10;
   if (!nh_private_.getParam ("kf_angle_eps", kf_angle_eps_))
     kf_angle_eps_  = 10.0 * M_PI / 180.0;
+
+  std::string tf_prefix_ = tf::getPrefixParam(nh_private_);
+  fixed_frame_ = tf::resolve(tf_prefix_, fixed_frame_);
+
 }
   
 void KeyframeSender::RGBDCallback(

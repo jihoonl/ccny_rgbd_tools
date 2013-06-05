@@ -95,11 +95,15 @@ void VisualOdometry::initParams()
   if (!nh_private_.getParam ("publish_pose", publish_pose_))
     publish_pose_ = true;
   if (!nh_private_.getParam ("fixed_frame", fixed_frame_))
-    fixed_frame_ = "/odom";
+    fixed_frame_ = "odom";
   if (!nh_private_.getParam ("base_frame", base_frame_))
-    base_frame_ = "/camera_link";
+    base_frame_ = "camera_link";
   if (!nh_private_.getParam ("queue_size", queue_size_))
     queue_size_ = 5;
+
+  std::string tf_prefix_ = tf::getPrefixParam(nh_private_);
+  base_frame_ = tf::resolve(tf_prefix_, base_frame_);
+  fixed_frame_ = tf::resolve(tf_prefix_, fixed_frame_);
 
   // detector params
 
@@ -177,6 +181,7 @@ void VisualOdometry::configureMotionEstimation()
   double max_corresp_dist_eucl;
   double max_assoc_dist_mah;
   int n_nearest_neighbors;
+
 
   if (!nh_private_.getParam ("reg/ICPProbModel/tf_epsilon_linear", tf_epsilon_linear))
     tf_epsilon_linear = 1e-4; // 1 mm
