@@ -24,49 +24,11 @@
 #ifndef CCNY_RGBD_KEYFRAME_MULTI_MAPPER_H
 #define CCNY_RGBD_KEYFRAME_MULTI_MAPPER_H
 
-#include <iostream>
-#include <fstream>
-#include <ros/ros.h>
-#include <ros/publisher.h>
-#include <pcl/point_cloud.h>
-#include <pcl_ros/point_cloud.h>
-#include <pcl_ros/transforms.h>
-#include <pcl/filters/passthrough.h>
-#include <tf/transform_listener.h>
-#include <tf/transform_broadcaster.h>
-#include <visualization_msgs/Marker.h>
-#include <boost/regex.hpp>
-#include <octomap/octomap.h>
-#include <octomap/OcTree.h>
-#include <octomap/ColorOcTree.h>
-#include <rgbdtools/rgbdtools.h>
-#include <tbb/concurrent_vector.h>
-
-#include "ccny_rgbd/types.h"
-#include "ccny_rgbd/util.h"
-#include "ccny_rgbd/GenerateGraph.h"
-#include "ccny_rgbd/SolveGraph.h"
-#include "ccny_rgbd/AddManualKeyframe.h"
-#include "ccny_rgbd/PublishKeyframe.h"
-#include "ccny_rgbd/PublishKeyframes.h"
-#include "ccny_rgbd/Save.h"
-#include "ccny_rgbd/Load.h"
+#include "ccny_rgbd/apps/keyframe_online_mapper.h"
 
 namespace ccny_rgbd {
 
-/** @brief Builds a 3D map from a series of RGBD keyframes.
- * 
- * The KeyframeMapper app subscribes to a stream of RGBD images, as well
- * a transform between a fixed and a moving frame (generated, for example, 
- * by the VisualOdometry app). The mapper stores a sequence of keyframes
- * containing all the necessary data to build a textured 3D point cloud map.
- * 
- * The class provides an interface to perform graph-based global alignement
- * (in post-processing).
- *
- * Additionally, the class provides an interface to save and load keyframes
- * to file, so that post-processing can be done with offline data.
- */    
+
 class KeyframeMultiMapper
 {
   public:
@@ -86,164 +48,26 @@ class KeyframeMultiMapper
      */
     void initParams();
 
-    /** @brief ROS callback to publish keyframes as point clouds
-     * 
-     * The argument should be a regular expression string matching the
-     * index of the desired keyframes to be published.
-     * 
-     * Note: passing a string may require escaping the quotation marks,
-     * otherwise ROS sometimes confuses it for an integer
-     * 
-     * Examples:
-     *  - /publish_keyframes ".*" --> publishes all keyframes
-     *  - /publish_keyframes \"[1-9]\" --> publishes keyframes 1 to 9
-     * 
-     * The keyframe point clouds are published one by one.
-     */
+    void publishMapTransforms();
+    void publishPointcloud();
     
   protected:
 
     ros::NodeHandle nh_;          ///< public nodehandle
     ros::NodeHandle nh_private_;  ///< private nodepcdhandle
     
-    std::string fixed_frame_;     ///< the fixed frame (usually "odom")
-    
-    int queue_size_;  ///< Subscription queue size
-    
-    double max_range_;  ///< Maximum threshold for  range (in the z-coordinate of the camera frame)
-    double max_stdev_;  ///< Maximum threshold for range (z-coordinate) standard deviation
-
-    //rgbdtools::KeyframeVector keyframes_;    ///< vector of RGBD Keyframes
-    tbb::concurrent_vector<rgbdtools::RGBDKeyframe> keyframes_;
-    
-    /** @brief Main callback for RGB, Depth, and CameraInfo messages
-     * 
-     * @param depth_msg Depth message (16UC1, in mm)
-     * @param rgb_msg RGB message (8UC3)
-     * @param info_msg CameraInfo message, applies to both RGB and depth images
-     */
-    virtual void RGBDCallback(const ImageMsg::ConstPtr& rgb_msg,
-                              const ImageMsg::ConstPtr& depth_msg,
-                              const CameraInfoMsg::ConstPtr& info_msg);
+    ros::Publisher keyframes_pub_;
+    tf::TransformBroadcaster tf_broadcaster_;
 
   private:
 
-    ros::Publisher keyframes_pub_;    ///< ROS publisher for the keyframe point clouds
-    ros::Publisher poses_pub_;        ///< ROS publisher for the keyframe poses
-    ros::Publisher kf_assoc_pub_;     ///< ROS publisher for the keyframe associations
-    ros::Publisher path_pub_;         ///< ROS publisher for the keyframe path
-    
-
-    tf::TransformListener tf_listener_; ///< ROS transform listener
-
-    /** @brief Image transport for RGB message subscription */
-    boost::shared_ptr<ImageTransport> rgb_it_;
-    
-    /** @brief Image transport for depth message subscription */
-    boost::shared_ptr<ImageTransport> depth_it_;
-    
-    /** @brief Callback syncronizer */
-    boost::shared_ptr<RGBDSynchronizer3> sync_;
-          
-    /** @brief RGB message subscriber */
-    ImageSubFilter      sub_rgb_;
-    
-    /** @brief Depth message subscriber */
-    ImageSubFilter      sub_depth_;  
-   
-    /** @brief Camera info message subscriber */
-    CameraInfoSubFilter sub_info_;
-    
-    // params
-    double pcd_map_res_; ///< downsampling resolution of pcd map (in meters)
-    double octomap_res_;  ///< tree resolution for octomap (in meters)
-    double kf_dist_eps_;  ///< linear distance threshold between keyframes
-    double kf_angle_eps_; ///< angular distance threshold between keyframes
-    bool octomap_with_color_; ///< whetehr to save Octomaps with color info      
-    double max_map_z_;   ///< maximum z (in fixed frame) when exporting maps.
-
+    int queue_size_;
     bool verbose;
-    int graph_n_keypoints;
-    int graph_n_candidates;
-    int graph_k_nearest_neighbors;
-
-
-    int ransac_max_iterations_;
-	int sac_min_inliers_;
-	bool matcher_use_desc_ratio_test_;
-	double matcher_max_desc_ratio_;
-	double matcher_max_desc_dist_;
-	double sac_max_eucl_dist_sq_;
-	bool sac_reestimate_tf_;
-	double ransac_sufficient_inlier_ratio_;
-	double ransac_confidence_;
-	double log_one_minus_ransac_confidence_;
-	bool sac_save_results_;
-	std::string output_path_;
-
-
-          
-    // state vars
-    bool manual_add_;   ///< flag indicating whetehr a manual add has been requested
-
-    int rgbd_frame_index_;
-
-    rgbdtools::KeyframeGraphDetector graph_detector_;  ///< builds graph from the keyframes
-    rgbdtools::KeyframeGraphSolverG2O graph_solver_;    ///< optimizes the graph for global alignement
-
-    tbb::concurrent_vector<rgbdtools::KeyframeAssociation> associations_;
-    //rgbdtools::KeyframeAssociationVector associations_; ///< keyframe associations that form the graph
+    int num_robots;
     
-    PathMsg path_msg_;    /// < contains a vector of positions of the camera (not base) pose
-    
+    tbb::concurrent_vector<KeyframeOnlineMapper::Ptr> robot_mappers;
+    tbb::concurrent_vector<tf::Transform> map_transforms;
 
-    void getCandidateMatches(
-      const rgbdtools::RGBDKeyframe& frame_q, const rgbdtools::RGBDKeyframe& frame_t,
-      rgbdtools::DMatchVector& candidate_matches);
-
-    int pairwiseMatchingRANSAC(
-      const rgbdtools::RGBDKeyframe& frame_t,
-      const rgbdtools::RGBDKeyframe& frame_q,
-      rgbdtools::DMatchVector& best_inlier_matches,
-      Eigen::Matrix4f& best_transformation);
-
-
-    void optimizationLoop();
-
-
-    g2o::SparseOptimizer optimizer;
-    g2o::BlockSolverX::LinearSolverType * linearSolver;
-    g2o::BlockSolverX * solver_ptr;
-
-
-    void addVertex(
-      const AffineTransform& vertex_pose,
-      int vertex_idx);
-
-    void addEdge(
-      int from_idx,
-      int to_idx,
-      const AffineTransform& relative_pose,
-      const Eigen::Matrix<double,6,6>& information_matrix);
-
-    void optimizeGraph();
-
-    void getOptimizedPoses(AffineTransformVector& poses);
-    void publishMapTransform();
-
-    tf::Transform map_to_odom;
-    tf::TransformBroadcaster tf_broadcaster_;
-
-
-
-    /** @brief processes an incoming RGBD frame with a given pose,
-     * and determines whether a keyframe should be inserted
-     * @param frame the incoming RGBD frame (image)
-     * @param pose the pose of the base frame when RGBD image was taken
-     * @retval true a keyframe was inserted
-     * @retval false no keyframe was inserted
-     */
-    bool processFrame(const rgbdtools::RGBDFrame& frame, const tf::StampedTransform& pose);
 
 };
 
