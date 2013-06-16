@@ -144,7 +144,7 @@ void KeyframeMapper::initParams()
   graph_detector_.setSACReestimateTf(false);
   graph_detector_.setSACSaveResults(true);
   graph_detector_.setVerbose(verbose);
-  graph_detector_.setOutputPath("/home/vsu/mapping_debug");
+  graph_detector_.setOutputPath("~/mapping_debug");
 }
   
 void KeyframeMapper::RGBDCallback(

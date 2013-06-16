@@ -365,19 +365,16 @@ void KeyframeOnlineMapper::optimizationLoop() {
 
 
 		for (int i=0; i < current_keyframes_size; i++) {
-			rgbdtools::RGBDKeyframe& keyframe =
-					keyframes_[i];
+			rgbdtools::RGBDKeyframe& keyframe = keyframes_[i];
 			keyframe.index = i;
 			addVertex(keyframe.pose, i);
 		}
 
-		rgbdtools::InformationMatrix ransac_inf =
-				rgbdtools::InformationMatrix::Identity();
+		rgbdtools::InformationMatrix ransac_inf = rgbdtools::InformationMatrix::Identity();
 
 		for (int i=0; i < current_associations_size; i++) {
 
-			const rgbdtools::KeyframeAssociation& association =
-					associations_[i];
+			const rgbdtools::KeyframeAssociation& association = associations_[i];
 
 			// skip non-ransac associations
 			if (association.type != rgbdtools::KeyframeAssociation::RANSAC)
@@ -388,8 +385,7 @@ void KeyframeOnlineMapper::optimizationLoop() {
 			rgbdtools::InformationMatrix inf = ransac_inf;
 
 			// add the edge
-			addEdge(association.it_a->index, association.it_b->index,
-					association.a2b, inf);
+			addEdge(association.it_a->index, association.it_b->index, association.a2b, inf);
 		}
 
 
@@ -415,24 +411,23 @@ void KeyframeOnlineMapper::optimizationLoop() {
 
 		map_to_odom = tfFromEigenAffine(pose_after_optimization * pose_before_optimization.inverse() * eigenAffineFromTf(map_to_odom) );
 
-		sleep(5);
+    //buildAndPublishOctomap();
 
+		sleep(5);
 	}
 }
 
 void KeyframeOnlineMapper::publishMapTransform() {
-
 	printf("Initialized map to odom transform sender\n");
 
 	while(true){
-		tf::StampedTransform transform_msg(
-		  map_to_odom, ros::Time::now(), fixed_frame_, odom_frame_);
-		  tf_broadcaster_.sendTransform (transform_msg);
+		tf::StampedTransform transform_msg(map_to_odom, ros::Time::now(), fixed_frame_, odom_frame_);
+		tf_broadcaster_.sendTransform (transform_msg);
 
-		  usleep(33333);
+		usleep(33333);
 	}
-
 }
+
 
 // frame_a = train, frame_b = query
 void KeyframeOnlineMapper::getCandidateMatches(
