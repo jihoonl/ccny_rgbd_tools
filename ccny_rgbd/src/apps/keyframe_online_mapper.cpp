@@ -53,8 +53,8 @@ KeyframeOnlineMapper::KeyframeOnlineMapper(
 
   // **** publishers
   
-  keyframes_pub_ = nh_.advertise<PointCloudT>(
-    "keyframes", queue_size_);
+//  keyframes_pub_ = nh_.advertise<PointCloudT>("keyframes", queue_size_);
+  octomap_pub_ = nh_.advertise<octomap_msgs::Octomap>("octomap_binary",1,true);
   
 
   // **** subscribers
@@ -66,9 +66,9 @@ KeyframeOnlineMapper::KeyframeOnlineMapper(
   image_transport::TransportHints depth_th("compressedDepth");
 
 
-  sub_rgb_.subscribe(rgb_it,     "/" + prefix_ + "/keyframes/rgb",   queue_size_, rgb_th);
-  sub_depth_.subscribe(depth_it, "/" + prefix_ + "/keyframes/depth", queue_size_, depth_th);
-  sub_info_.subscribe(nh_,       "/" + prefix_ + "/keyframes/info",  queue_size_);
+  sub_rgb_.subscribe(rgb_it,     "rgbd/rgb",   queue_size_, rgb_th);
+  sub_depth_.subscribe(depth_it, "rgbd/depth", queue_size_, depth_th);
+  sub_info_.subscribe(nh_,       "rgbd/info",  queue_size_);
 
   // Synchronize inputs.
   sync_.reset(new RGBDSynchronizer3(
@@ -76,14 +76,13 @@ KeyframeOnlineMapper::KeyframeOnlineMapper(
    
   sync_->registerCallback(boost::bind(&KeyframeOnlineMapper::RGBDCallback, this, _1, _2, _3));
 
+  ROS_INFO("Starting Threads..");
   boost::thread t(boost::bind(&KeyframeOnlineMapper::optimizationLoop, this));
   boost::thread t1(boost::bind(&KeyframeOnlineMapper::publishMapTransform, this));
-
 }
 
 KeyframeOnlineMapper::~KeyframeOnlineMapper()
 {
-
 }
 
 void KeyframeOnlineMapper::initParams()
@@ -194,7 +193,8 @@ void KeyframeOnlineMapper::RGBDCallback(
   rgbd_frame_index_++;
   
 
-  bool result = processFrame(frame, transform);
+  processFrame(frame, transform);
+  //bool result = processFrame(frame, transform);
   //if (result) publishKeyframeData(keyframes_.size() - 1);
 
   //publishPath();
@@ -297,11 +297,10 @@ bool KeyframeOnlineMapper::processFrame(
 	  // perform ransac matching, b onto a
 	  Eigen::Matrix4f transformation;
 
-	  int iterations = pairwiseMatchingRANSAC(
-	        *it, *current_keyframe_it, inlier_matches, transformation);
+//	  int iterations = pairwiseMatchingRANSAC(*it, *current_keyframe_it, inlier_matches, transformation);
 
 
-	  if (inlier_matches.size() >= sac_min_inliers_) {
+	  if (inlier_matches.size() >= (unsigned int)sac_min_inliers_) {
 
 			// add an association
 			rgbdtools::KeyframeAssociation association;
@@ -313,7 +312,7 @@ bool KeyframeOnlineMapper::processFrame(
 			associations_.push_back(association);
 
 
-			ROS_INFO("Inliers size %d, K1 %d, K2 %d", inlier_matches.size(), it->keypoints.size(), current_keyframe_it->keypoints.size());
+			ROS_INFO("Inliers size %d, K1 %d, K2 %d", (int)inlier_matches.size(), (int)it->keypoints.size(), (int)current_keyframe_it->keypoints.size());
 
 			// save the results to file
 			if (sac_save_results_) {
@@ -339,23 +338,23 @@ bool KeyframeOnlineMapper::processFrame(
 }
 
 
-
 void KeyframeOnlineMapper::optimizationLoop() {
 
-	printf("Initialized Optimization loop\n");
+  ROS_INFO("Initialising optimization loop..");
 
 	int last_processed_keyframe = 0;
 	int last_processed_association = 0;
 
-	int update_on_n_new_keyframes = 3;
+	//int update_on_n_new_keyframes = 3;
 
-	while (true) {
+	while (ros::ok()) {
 
 		int current_keyframes_size = keyframes_.size();
 		int current_associations_size = associations_.size();
 
 		//if ((current_keyframes_size - last_processed_keyframe) < update_on_n_new_keyframes) {
 		if(current_keyframes_size < 3 || current_associations_size < 3) {
+      ROS_INFO("current keyframe size : %d, current associations_size : %d",current_keyframes_size,current_associations_size);
 			sleep(1);
 			continue;
 		} else {
@@ -381,7 +380,7 @@ void KeyframeOnlineMapper::optimizationLoop() {
 				continue;
 
 			// calculate the information matrix
-			int n_matches = association.matches.size();
+//			int n_matches = association.matches.size();
 			rgbdtools::InformationMatrix inf = ransac_inf;
 
 			// add the edge
@@ -390,11 +389,11 @@ void KeyframeOnlineMapper::optimizationLoop() {
 
 
 		// run the optimization
-		printf("Optimizing...\n");
+		ROS_INFO("Optimizing...\n");
 		optimizeGraph();
 
 		// update the keyframe poses
-		printf("Updating keyframe poses...\n");
+		ROS_INFO("Updating keyframe poses...\n");
 
 		rgbdtools::Pose pose_before_optimization = keyframes_[current_keyframes_size-1].pose;
 
@@ -411,16 +410,17 @@ void KeyframeOnlineMapper::optimizationLoop() {
 
 		map_to_odom = tfFromEigenAffine(pose_after_optimization * pose_before_optimization.inverse() * eigenAffineFromTf(map_to_odom) );
 
-    //buildAndPublishOctomap();
+    buildAndPublishOctomap();
 
 		sleep(5);
 	}
+  ROS_INFO("Finishing optimization loop");
 }
 
 void KeyframeOnlineMapper::publishMapTransform() {
-	printf("Initialized map to odom transform sender\n");
+	ROS_INFO("Initialized map to odom transform sender\n");
 
-	while(true){
+	while(ros::ok()){
 		tf::StampedTransform transform_msg(map_to_odom, ros::Time::now(), fixed_frame_, odom_frame_);
 		tf_broadcaster_.sendTransform (transform_msg);
 
@@ -502,10 +502,10 @@ int KeyframeOnlineMapper::pairwiseMatchingRANSAC(
   getCandidateMatches(frame_q, frame_t, candidate_matches);
 
   // check if enough matches are present
-  if (candidate_matches.size() < min_sample_size)  return 0;
-  if (candidate_matches.size() < sac_min_inliers_) return 0;
+  if (candidate_matches.size() < (unsigned int)min_sample_size)  return 0;
+  if (candidate_matches.size() < (unsigned int)sac_min_inliers_) return 0;
 
-  ROS_INFO("Candidate matches %d", candidate_matches.size());
+  ROS_INFO("Candidate matches %d",(int) candidate_matches.size());
 
   // **** build 3D features for SVD ********************************
 
@@ -514,7 +514,7 @@ int KeyframeOnlineMapper::pairwiseMatchingRANSAC(
   features_t.resize(candidate_matches.size());
   features_q.resize(candidate_matches.size());
 
-  for (int m_idx = 0; m_idx < candidate_matches.size(); ++m_idx)
+  for (unsigned int m_idx = 0; m_idx < candidate_matches.size(); ++m_idx)
   {
     const cv::DMatch& match = candidate_matches[m_idx];
     int idx_q = match.queryIdx;
@@ -540,7 +540,7 @@ int KeyframeOnlineMapper::pairwiseMatchingRANSAC(
 
   std::set<int> mask;
 
-  while(true)
+  while(ros::ok())
   //for (iteration = 0; iteration < ransac_max_iterations_; ++iteration)
   {
     // generate random indices
@@ -568,7 +568,7 @@ int KeyframeOnlineMapper::pairwiseMatchingRANSAC(
     PointCloudFeature features_q_tf;
     pcl::transformPointCloud(features_q, features_q_tf, transformation);
 
-    for (int m_idx = 0; m_idx < candidate_matches.size(); ++m_idx)
+    for (unsigned int m_idx = 0; m_idx < candidate_matches.size(); ++m_idx)
     {
       // euclidedan distance test
       const PointFeature& p_t = features_t[m_idx];
@@ -610,7 +610,7 @@ int KeyframeOnlineMapper::pairwiseMatchingRANSAC(
     // **** termination: iterations + inlier ratio
     if(best_inlier_matches.size() < sac_min_inliers_)
     {
-      if (iteration >= ransac_max_iterations_) break;
+      if (iteration >= (unsigned int)ransac_max_iterations_) break;
     }
     // **** termination: confidence ratio test
     else
@@ -750,6 +750,82 @@ void KeyframeOnlineMapper::getOptimizedPoses(AffineTransformVector& poses)
     //Set the optimized pose to the vector of poses
     poses[idx] = optimized_pose;
   }
+}
+
+void KeyframeOnlineMapper::buildAndPublishOctomap()
+{
+  octomap::ColorOcTree tree(octomap_res_);   
+  buildColorOctomap(tree);
+  publishColorOctomap(tree);
+}
+
+void KeyframeOnlineMapper::buildColorOctomap(octomap::ColorOcTree& tree)
+{
+  ROS_INFO("Building Octomap with color...");
+
+  octomap::point3d sensor_origin(0.0, 0.0, 0.0);  
+
+  for (unsigned int kf_idx = 0; kf_idx < keyframes_.size(); ++kf_idx)
+  {
+    ROS_INFO("Processing keyframe %u", kf_idx);
+    const rgbdtools::RGBDKeyframe& keyframe = keyframes_[kf_idx];
+       
+    // construct the cloud
+    PointCloudT::Ptr cloud_unf(new PointCloudT());
+    keyframe.constructDensePointCloud(*cloud_unf, max_range_, max_stdev_);
+  
+    // perform filtering for max z
+    pcl::transformPointCloud(*cloud_unf, *cloud_unf, keyframe.pose);
+    PointCloudT cloud;
+    pcl::PassThrough<PointT> pass;
+    pass.setInputCloud (cloud_unf);
+    pass.setFilterFieldName ("z");
+    pass.setFilterLimits (-std::numeric_limits<double>::infinity(), max_map_z_);
+    pass.filter(cloud);
+    pcl::transformPointCloud(cloud, cloud, keyframe.pose.inverse());
+    
+    octomap::pose6d frame_origin = poseTfToOctomap(tfFromEigenAffine(keyframe.pose));
+    
+    // build octomap cloud from pcl cloud
+    octomap::Pointcloud octomap_cloud;
+    for (unsigned int pt_idx = 0; pt_idx < cloud.points.size(); ++pt_idx)
+    {
+      const PointT& p = cloud.points[pt_idx];
+      if (!std::isnan(p.z))
+        octomap_cloud.push_back(p.x, p.y, p.z);
+    }
+    
+    // insert scan (only xyz considered, no colors)
+    tree.insertScan(octomap_cloud, sensor_origin, frame_origin);
+    
+    // insert colors
+    PointCloudT cloud_tf;
+    pcl::transformPointCloud(cloud, cloud_tf, keyframe.pose);
+    for (unsigned int pt_idx = 0; pt_idx < cloud_tf.points.size(); ++pt_idx)
+    {
+      const PointT& p = cloud_tf.points[pt_idx];
+      if (!std::isnan(p.z))
+      {
+        octomap::point3d endpoint(p.x, p.y, p.z);
+        octomap::ColorOcTreeNode* n = tree.search(endpoint);
+        if (n) n->setColor(p.r, p.g, p.b); 
+      }
+    }
+    
+    tree.updateInnerOccupancy();
+  }
+}
+
+void KeyframeOnlineMapper::publishColorOctomap(octomap::ColorOcTree& tree)
+{
+  octomap_msgs::Octomap map;
+  map.header.frame_id = "/map";
+  map.header.stamp = ros::Time::now();
+
+  if(octomap_msgs::binaryMapToMsg(tree,map))
+    octomap_pub_.publish(map);
+  else 
+    ROS_ERROR("Error serialising OctoMap");
 }
 
 

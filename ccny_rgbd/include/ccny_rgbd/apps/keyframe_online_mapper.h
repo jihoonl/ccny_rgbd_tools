@@ -39,6 +39,8 @@
 #include <octomap/octomap.h>
 #include <octomap/OcTree.h>
 #include <octomap/ColorOcTree.h>
+#include <octomap_msgs/Octomap.h>
+#include <octomap_msgs/conversions.h>
 #include <rgbdtools/rgbdtools.h>
 #include <tbb/concurrent_vector.h>
 
@@ -112,6 +114,7 @@ class KeyframeOnlineMapper
   private:
 
     ros::Publisher keyframes_pub_;    ///< ROS publisher for the keyframe point clouds
+    ros::Publisher octomap_pub_;    // octomap publisher
     
 
     tf::TransformListener tf_listener_; ///< ROS transform listener
@@ -189,6 +192,9 @@ class KeyframeOnlineMapper
 
 
     void optimizationLoop();
+    void buildAndPublishOctomap();
+    void buildColorOctomap(octomap::ColorOcTree& tree);
+    void publishColorOctomap(octomap::ColorOcTree& tree);
 
 
     g2o::SparseOptimizer optimizer;
@@ -225,6 +231,33 @@ class KeyframeOnlineMapper
      */
     bool processFrame(const rgbdtools::RGBDFrame& frame, const tf::StampedTransform& pose);
 
+    static inline octomap::pose6d poseTfToOctomap(
+      const tf::Pose& poseTf)
+    {
+      return octomap::pose6d(
+              pointTfToOctomap(poseTf.getOrigin()),
+              quaternionTfToOctomap(poseTf.getRotation()));
+    }
+
+     /** @brief Convert a tf point to octomap point
+     * @param poseTf the tf point
+     * @return octomap point
+     */
+     static inline octomap::point3d pointTfToOctomap(
+       const tf::Point& ptTf)
+     {
+       return octomap::point3d(ptTf.x(), ptTf.y(), ptTf.z());
+     }
+    
+     /** @brief Convert a tf quaternion to octomap quaternion
+     * @param poseTf the tf quaternion
+     * @return octomap quaternion
+     */
+     static inline octomath::Quaternion quaternionTfToOctomap(
+       const tf::Quaternion& qTf)
+     {
+       return octomath::Quaternion(qTf.w(), qTf.x(), qTf.y(), qTf.z());
+     }
 };
 
 } // namespace ccny_rgbd
