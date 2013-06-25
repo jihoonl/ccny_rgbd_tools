@@ -105,9 +105,10 @@ target_link_libraries (keyframe_sender_nodelet
 
 rosbuild_add_library(rgbd_image_proc_app 
   src/apps/rgbd_image_proc.cpp
-  src/util.cpp)
+  )
 
 target_link_libraries (rgbd_image_proc_app  
+  ccny_utils
   rgbdtools
   boost_signals
   boost_system
