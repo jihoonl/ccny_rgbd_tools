@@ -80,6 +80,9 @@ rosbuild_add_library(keyframe_sender_nodelet
   src/apps/keyframe_sender.cpp
   src/util.cpp)
 
+rosbuild_add_library(ccny_utils
+    src/util.cpp)
+
 target_link_libraries (keyframe_sender
   rgbdtools
   ${OpenCV_LIBRARIES})
@@ -87,6 +90,30 @@ target_link_libraries (keyframe_sender
 target_link_libraries (keyframe_sender_nodelet
   rgbdtools
   ${OpenCV_LIBRARIES})
-  
-  
+
+target_link_libraries (ccny_utils
+  rgbdtools
+  ${OpenCV_LIBRARIES})
+
+############################
+# rgbd_image_proc
+############################
+
+rosbuild_add_library(rgbd_image_proc_app 
+  src/apps/rgbd_image_proc.cpp
+  src/util.cpp)
+
+target_link_libraries (rgbd_image_proc_app  
+  rgbdtools
+  boost_signals
+  boost_system
+  boost_filesystem
+  ${OpenCV_LIBRARIES}
+  )
+
+rosbuild_add_executable(rgbd_image_proc_node src/node/rgbd_image_proc_node.cpp)
+rosbuild_add_library(rgbd_image_proc_nodelet src/nodelet/rgbd_image_proc_nodelet.cpp)
+
+target_link_libraries(rgbd_image_proc_node    rgbd_image_proc_app)
+target_link_libraries(rgbd_image_proc_nodelet rgbd_image_proc_app)
 
