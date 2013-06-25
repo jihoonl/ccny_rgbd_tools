@@ -70,30 +70,34 @@ rosbuild_add_boost_directories()
 # Build keyframe sender application
 ################################################################
 
-rosbuild_add_executable(keyframe_sender
-  src/node/keyframe_sender_node.cpp
-  src/apps/keyframe_sender.cpp
-  src/util.cpp)
-
-rosbuild_add_library(keyframe_sender_nodelet
-  src/nodelet/keyframe_sender_nodelet.cpp
-  src/apps/keyframe_sender.cpp
-  src/util.cpp)
-
 rosbuild_add_library(ccny_utils
     src/util.cpp)
 
-target_link_libraries (keyframe_sender
-  rgbdtools
-  ${OpenCV_LIBRARIES})
+rosbuild_add_library(keyframe_sender
+  src/apps/keyframe_sender.cpp)
 
-target_link_libraries (keyframe_sender_nodelet
-  rgbdtools
-  ${OpenCV_LIBRARIES})
+rosbuild_add_library(keyframe_sender_nodelet
+  src/nodelet/keyframe_sender_nodelet.cpp)
+
+rosbuild_add_executable(keyframe_sender_node
+  src/node/keyframe_sender_node.cpp)
 
 target_link_libraries (ccny_utils
   rgbdtools
   ${OpenCV_LIBRARIES})
+
+target_link_libraries (keyframe_sender
+  ccny_utils)
+
+target_link_libraries (keyframe_sender_node
+  keyframe_sender)
+
+target_link_libraries (keyframe_sender_nodelet
+  keyframe_sender)
+
+
+
+
 
 ############################
 # rgbd_image_proc
